@@ -14,7 +14,9 @@
     "preview": "vite preview web --host",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm test && npm run build"
+    "check": "npm run typecheck && npm test && npm run build",
+    "simulate": "vite-node scripts/simulate.ts",
+    "mutations": "python3 scripts/mutations.py"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1",

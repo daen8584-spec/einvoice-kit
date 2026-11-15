@@ -101,12 +101,13 @@ export function checkSpanishInvoice(invoice: Invoice, options: CheckOptions = {}
       issues.push(issue("warning", "corrects-reason", "Indica el motivo de la rectificación, por ejemplo «devolución de mercancía».", "Give the reason for the correction, for example \"goods returned\".", "corrects.reason"));
   }
 
-  // Shops round tax line by line, so a cent or so per line is normal. More than
-  // that means the tax doesn't belong to the rate shown.
+  // Shops round tax line by line, and a partial refund takes its share of that
+  // already-rounded tax. Together that can move each line by up to 2 cents from
+  // base × rate. More than that means the tax doesn't belong to the rate shown.
   for (const g of totals.groups) {
     const linesAtRate = invoice.lines.filter((l) => l.rate === g.rate).length;
     const expected = Math.round((g.base * g.rate) / 10000);
-    if (Math.abs(g.tax - expected) > Math.max(1, linesAtRate))
+    if (Math.abs(g.tax - expected) > 2 * Math.max(1, linesAtRate))
       issues.push(issue("error", "tax-mismatch", `El IVA al ${g.rate / 100} % (${es(g.tax)}) no corresponde a su base imponible (${es(g.base)}).`, `The ${g.rate / 100}% VAT (${formatPlain(g.tax)}) doesn't match its taxable base (${formatPlain(g.base)}).`, "lines"));
   }
 

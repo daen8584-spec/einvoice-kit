@@ -39,6 +39,21 @@ describe("Spanish invoice checks", () => {
     ]);
   });
 
+  it("accepts a partial refund's share of a line's rounded VAT", () => {
+    // Found by the simulation: 9 of 11 units at 4.24, whose line VAT Shopify rounded
+    // to 8.09. The refund's share is 6.61, 2 cents from 21% of its base.
+    const credit: Invoice = {
+      ...good, kind: "credit-note", corrects: { number: "F2026-000001", issueDate: "2026-11-06", reason: "Devolución" },
+      lines: [{ description: "x", quantity: -9, unitPrice: 424, discount: 0, rate: 2100, tax: -661 }],
+    };
+    expect(codes(credit)).toEqual([]);
+  });
+
+  it("still catches VAT that belongs to another rate", () => {
+    const wrong: Invoice = { ...good, lines: [{ description: "x", quantity: 1, unitPrice: 12100, rate: 2100, tax: 1100 }] };
+    expect(codes(wrong)).toEqual(["error:tax-mismatch"]);
+  });
+
   it("compares the total printed on the invoice with the real one", () => {
     expect(codes(good, { statedTotal: 5000 })).toEqual([]);
     const issues = checkSpanishInvoice(good, { statedTotal: 4999, today: "2026-11-15" }).issues;

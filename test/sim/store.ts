@@ -88,6 +88,8 @@ export interface SimOrder {
   amountByRate: Map<bigint, bigint>;
   taxId: "none" | "valid" | "invalid";
   refunds: SimRefund[];
+  /** The customer fixes the order in Shopify later: a valid tax ID is added. */
+  correction: { at: number; order: ShopifyOrder } | null;
 }
 
 const RATES = [2100n, 2100n, 2100n, 1000n, 400n, 0n];
@@ -117,12 +119,14 @@ export function makeOrder(rnd: Random, n: number): SimOrder {
   const subtotal = lines.reduce((s, l) => s + l.price * BigInt(l.quantity), 0n);
   if (rnd.chance(0.35) && subtotal > 0n) {
     const total = rnd.chance(0.5) ? (subtotal * BigInt(rnd.pick([5, 10, 15, 20, 33, 50]))) / 100n : BigInt(rnd.int(1, Number(subtotal)));
+    // Each line gets its share rounded down; leftover cents go one at a time to
+    // lines that still have room, so no line is ever discounted below zero.
     let given = 0n;
-    lines.forEach((l, i) => {
-      const gross = l.price * BigInt(l.quantity);
-      l.discount = i === lines.length - 1 ? total - given : (total * gross) / subtotal;
-      given += l.discount;
-    });
+    for (const l of lines) { l.discount = (total * l.price * BigInt(l.quantity)) / subtotal; given += l.discount; }
+    for (let i = 0; given < total; i = (i + 1) % lines.length) {
+      const l = lines[i]!;
+      if (l.discount < l.price * BigInt(l.quantity)) { l.discount += 1n; given += 1n; }
+    }
   }
   if (rnd.chance(0.15)) { const l = rnd.pick(lines); l.discount = l.price * BigInt(l.quantity); } // a free gift
   for (const l of lines) { l.amount = l.price * BigInt(l.quantity) - l.discount; l.tax = lineTax(l.amount, l.rate, included); }
@@ -172,13 +176,17 @@ export function makeOrder(rnd: Random, n: number): SimOrder {
     refunds: [],
   };
 
-  const sim: SimOrder = { order, at, lines, shipping, charged, taxByRate, amountByRate, taxId, refunds: [] };
-  addRefunds(rnd, sim);
+  const sim: SimOrder = { order, at, lines, shipping, charged, taxByRate, amountByRate, taxId, refunds: [], correction: null };
+  const needsFix = taxId === "invalid" || (taxId === "none" && charged > 300_000n);
+  const fixAt = needsFix && rnd.chance(0.6) ? at + rnd.int(3600, 6 * 86400) * 1000 : null;
+  const fixedAttributes = [{ name: "NIF", value: makeTaxId(rnd, true) }];
+  addRefunds(rnd, sim, fixAt, fixedAttributes);
+  if (fixAt !== null) sim.correction = { at: fixAt, order: { ...order, note_attributes: fixedAttributes, refunds: order.refunds!.filter((r) => Date.parse(r.created_at) < fixAt) } };
   return sim;
 }
 
 /** Up to three refunds, each for some units, sometimes trying to refund more than is left. */
-function addRefunds(rnd: Random, sim: SimOrder): void {
+function addRefunds(rnd: Random, sim: SimOrder, fixAt: number | null, fixedAttributes: { name: string; value: string }[]): void {
   if (!rnd.chance(0.3)) return;
   const refunded = new Map<number, number>();
   let at = sim.at;
@@ -207,6 +215,7 @@ function addRefunds(rnd: Random, sim: SimOrder): void {
     if (!items.length) continue;
     const refund: ShopifyRefund = { id: sim.order.id * 10 + k, created_at: new Date(at).toISOString(), note: rnd.chance(0.5) ? "Devolución" : null, refund_line_items: items, order_adjustments: [] };
     sim.order.refunds!.push(refund);
-    sim.refunds.push({ refund, orderAtRefund: { ...sim.order, refunds: [...sim.order.refunds!] }, at, expected: { amount, tax, units, byRate }, overRefund: over });
+    const attributes = fixAt !== null && at >= fixAt ? fixedAttributes : sim.order.note_attributes;
+    sim.refunds.push({ refund, orderAtRefund: { ...sim.order, note_attributes: attributes ?? [], refunds: [...sim.order.refunds!] }, at, expected: { amount, tax, units, byRate }, overRefund: over });
   }
 }

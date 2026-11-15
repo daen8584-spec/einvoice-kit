@@ -3,9 +3,11 @@
  * with independent arithmetic. Returns every rule that was broken; an empty list
  * means every check passed for every order, refund and record.
  */
+import { createHash } from "node:crypto";
 import { InvoiceService, type IssuedDocument } from "../../src/app.js";
 import { verifyChain } from "../../src/es/verify.js";
 import type { ChainedRecord } from "../../src/es/verifactu.js";
+import type { ShopifyOrder } from "../../src/shopify/types.js";
 import { makeOrder, madridDate, Random, type SimOrder, type SimRefund } from "./store.js";
 
 export interface Report {
@@ -14,7 +16,7 @@ export interface Report {
   facts: Record<string, number>;
 }
 
-type Event = { at: number; kind: "order"; sim: SimOrder } | { at: number; kind: "refund"; sim: SimOrder; refund: SimRefund };
+type Event = { at: number; kind: "order"; sim: SimOrder; order: ShopifyOrder } | { at: number; kind: "refund"; sim: SimOrder; refund: SimRefund };
 
 const plain = (c: bigint) => { const n = c < 0n; const a = n ? -c : c; return `${n ? "-" : ""}${a / 100n}.${String(a % 100n).padStart(2, "0")}`; };
 
@@ -26,14 +28,15 @@ export async function runSimulation(orderCount: number, seed = 1): Promise<Repor
   // Every notification arrives 1 to 3 times, a little late, in no particular order.
   const events: Event[] = [];
   for (const sim of sims) {
-    for (let k = rnd.int(1, 3); k > 0; k--) events.push({ at: sim.at + rnd.int(0, 900) * 1000, kind: "order", sim });
+    for (let k = rnd.int(1, 3); k > 0; k--) events.push({ at: sim.at + rnd.int(0, 900) * 1000, kind: "order", sim, order: sim.order });
+    if (sim.correction)
+      for (let k = rnd.int(1, 2); k > 0; k--) events.push({ at: sim.correction.at + rnd.int(0, 900) * 1000, kind: "order", sim, order: sim.correction.order });
     for (const refund of sim.refunds)
       for (let k = rnd.int(1, 2); k > 0; k--) events.push({ at: refund.at + rnd.int(0, 900) * 1000, kind: "refund", sim, refund });
   }
   events.sort((a, b) => a.at - b.at);
 
   let now = 0;
-  const firstHandled = new Map<string, number>();
   const service = new InvoiceService(
     { seller: { name: "Tienda Simulada SL", taxId: "A28015865" }, exemptionText: "Exento, art. 20 LIVA" },
     undefined, undefined, () => new Date(now),
@@ -45,13 +48,8 @@ export async function runSimulation(orderCount: number, seed = 1): Promise<Repor
     const batch: Event[] = [];
     while (i < events.length && events[i]!.at < batchStart + 60_000) batch.push(events[i++]!);
     now = batch.at(-1)!.at;
-    for (const e of batch) {
-      const key = e.kind === "order" ? `order:${e.sim.order.id}` : `refund:${e.refund.refund.id}`;
-      if (!firstHandled.has(key)) firstHandled.set(key, now);
-      // A refund can arrive before its order's own notification; the app must cope.
-      if (e.kind === "refund" && !firstHandled.has(`order:${e.sim.order.id}`)) firstHandled.set(`order:${e.sim.order.id}`, now);
-    }
-    await Promise.all(batch.map((e) => (e.kind === "order" ? service.onOrder(e.sim.order) : service.onRefund(e.refund.orderAtRefund, e.refund.refund))));
+    // A refund can arrive before its order's own notification; the app must cope.
+    await Promise.all(batch.map((e) => (e.kind === "order" ? service.onOrder(e.order) : service.onRefund(e.refund.orderAtRefund, e.refund.refund))));
   }
 
   const failures: string[] = [];
@@ -63,9 +61,25 @@ export async function runSimulation(orderCount: number, seed = 1): Promise<Repor
   const docs = service.documents;
   for (const sim of sims) {
     const o = sim.order;
+    const needsFix = sim.taxId === "invalid" || (sim.taxId === "none" && sim.charged > 300_000n);
     const doc = docs.get(`order:${o.id}`);
+
+    if (needsFix && !sim.correction) {
+      // Never fixed: nothing may be issued for this order, not even its refunds.
+      const held = service.held.get(`order:${o.id}`);
+      const codes = held ? held.issues.filter((x) => x.level === "error").map((x) => x.code) : [];
+      const want = sim.taxId === "invalid" ? "buyer-nif" : "simplified-limit";
+      expect(!doc && Boolean(held) && codes.includes(want), () => `${o.name}: should be held for ${want}, got ${doc ? "an issued invoice" : codes.join(",")}`);
+      for (const r of sim.refunds)
+        expect(!docs.has(`refund:${r.refund.id}`) && service.held.has(`refund:${r.refund.id}`), () => `${o.name}: refund ${r.refund.id} was issued for a held invoice`);
+      fact(sim.taxId === "invalid" ? "held: mistyped tax ID, never fixed" : "held: over €3,000 without tax ID, never fixed");
+      if (sim.refunds.length) fact("held: refunds waiting for a held invoice");
+      continue;
+    }
+
     expect(Boolean(doc), () => `${o.name}: no invoice was issued`);
     if (!doc) continue;
+    if (needsFix) fact("held, then issued after the customer fixed it");
     const inv = doc.invoice;
     const t = doc.totals;
     fact(o.taxes_included ? "prices with VAT" : "prices without VAT");
@@ -81,26 +95,21 @@ export async function runSimulation(orderCount: number, seed = 1): Promise<Repor
     expect(t.groups.length === sim.taxByRate.size, () => `${o.name}: unexpected VAT rates ${t.groups.map((g) => g.rate)}`);
     expect(t.groups.every((g) => g.base + g.tax >= 0), () => `${o.name}: negative amount on an invoice`);
 
-    const issuedAt = firstHandled.get(`order:${o.id}`)!;
-    expect(inv.issueDate === madridDate(issuedAt), () => `${o.name}: issue date ${inv.issueDate}, expected ${madridDate(issuedAt)}`);
+    const f = doc.record.fields as unknown as Record<string, string>;
+    const generated = Date.parse(f.FechaHoraHusoGenRegistro!);
+    expect(inv.issueDate === madridDate(generated), () => `${o.name}: issue date ${inv.issueDate}, but it was generated on ${madridDate(generated)} in Madrid`);
+    expect(generated >= sim.at, () => `${o.name}: invoice generated before the sale`);
     const sale = madridDate(sim.at);
     expect((inv.operationDate ?? inv.issueDate) === sale, () => `${o.name}: sale date ${inv.operationDate ?? inv.issueDate}, expected ${sale}`);
-    if (inv.operationDate) fact("invoices issued the day after the sale");
+    if (inv.operationDate) fact("invoices issued on a later day than the sale");
 
-    const f = doc.record.fields as unknown as Record<string, string>;
+    const full = sim.taxId === "valid" || needsFix;
     expect(f.ImporteTotal === plain(sim.charged), () => `${o.name}: Verifactu total ${f.ImporteTotal}`);
     expect(f.CuotaTotal === plain([...sim.taxByRate.values()].reduce((a, b) => a + b, 0n)), () => `${o.name}: Verifactu tax ${f.CuotaTotal}`);
-    expect(f.TipoFactura === (sim.taxId === "none" ? "F2" : "F1"), () => `${o.name}: type ${f.TipoFactura} with tax ID ${sim.taxId}`);
+    expect(f.TipoFactura === (full ? "F1" : "F2"), () => `${o.name}: type ${f.TipoFactura} with tax ID ${sim.taxId}`);
     expect(f.NumSerieFactura === inv.number && f.IDEmisorFactura === "A28015865", () => `${o.name}: Verifactu identity fields wrong`);
-
-    const errors = doc.issues.filter((x) => x.level === "error").map((x) => x.code).sort();
-    const expectedErrors = [
-      ...(sim.taxId === "invalid" ? ["buyer-nif"] : []),
-      ...(sim.taxId === "none" && sim.charged > 300_000n ? ["simplified-limit"] : []),
-    ].sort();
-    expect(JSON.stringify(errors) === JSON.stringify(expectedErrors), () => `${o.name}: checks reported ${errors.join(",") || "nothing"}, expected ${expectedErrors.join(",") || "nothing"}`);
-    if (sim.taxId === "invalid") fact("mistyped customer tax IDs caught");
-    if (expectedErrors.includes("simplified-limit")) fact("simplified invoices over €3,000 caught");
+    const errors = doc.issues.filter((x) => x.level === "error").map((x) => x.code);
+    expect(errors.length === 0, () => `${o.name}: issued with errors ${errors.join(",")}`);
 
     let refundedAll = 0n, refundedTax = 0n;
     for (const r of sim.refunds) {
@@ -121,8 +130,10 @@ export async function runSimulation(orderCount: number, seed = 1): Promise<Repor
       expect(BigInt(cn.totals.tax) === -r.expected.tax, () => `${o.name}: refund ${r.refund.id} VAT ${cn.totals.tax}, expected ${-r.expected.tax}`);
       expect(r.overRefund === cn.warnings.some((w) => w.includes("left to refund")), () => `${o.name}: refund ${r.refund.id} over-refund warning wrong`);
       const cnErrors = cn.issues.filter((x) => x.level === "error").map((x) => x.code);
-      expect(JSON.stringify(cnErrors) === JSON.stringify(sim.taxId === "invalid" ? ["buyer-nif"] : []), () => `${o.name}: credit note checks reported ${cnErrors.join(",")}`);
-      expect(cn.record.fields.Huella !== undefined && (cn.record.fields as unknown as Record<string, string>).TipoFactura === (sim.taxId === "none" ? "R5" : "R1"), () => `${o.name}: credit note type wrong`);
+      expect(cnErrors.length === 0, () => `${o.name}: credit note issued with errors ${cnErrors.join(",")}`);
+      const cf = cn.record.fields as unknown as Record<string, string>;
+      expect(cf.TipoFactura === (full ? "R1" : "R5"), () => `${o.name}: credit note type ${cf.TipoFactura}`);
+      expect(cn.invoice.issueDate === madridDate(Date.parse(cf.FechaHoraHusoGenRegistro!)) && cn.invoice.issueDate >= inv.issueDate, () => `${o.name}: credit note dated ${cn.invoice.issueDate}`);
       refundedAll += BigInt(cn.totals.total); refundedTax += BigInt(cn.totals.tax);
     }
 
@@ -153,11 +164,26 @@ export async function runSimulation(orderCount: number, seed = 1): Promise<Repor
     expect(list.every((d) => d.invoice.issueDate.startsWith(s.slice(1))), () => `series ${s}: an invoice is dated in another year`);
     fact(`series ${s}`);
   }
-  const expectedDocs = sims.length + sims.reduce((n, s) => n + s.refunds.length, 0) - service.skipped.size;
+  const issuedOrders = sims.filter((s) => !((s.taxId === "invalid" || (s.taxId === "none" && s.charged > 300_000n)) && !s.correction));
+  const expectedDocs = issuedOrders.length + issuedOrders.reduce((n, s) => n + s.refunds.filter((r) => r.expected.units > 0).length, 0);
   expect(docs.size === expectedDocs, () => `${docs.size} documents for ${expectedDocs} orders and refunds`);
 
   // The Verifactu chain verifies, and any tampering is caught at the right place.
   const ledger = service.ledger;
+  // The auditor's own reading of AEAT's hash rule: these fields, in this order.
+  const SPEC = {
+    alta: ["IDEmisorFactura", "NumSerieFactura", "FechaExpedicionFactura", "TipoFactura", "CuotaTotal", "ImporteTotal", "Huella", "FechaHoraHusoGenRegistro"],
+    anulacion: ["IDEmisorFacturaAnulada", "NumSerieFacturaAnulada", "FechaExpedicionFacturaAnulada", "Huella", "FechaHoraHusoGenRegistro"],
+  };
+  let previous = "";
+  ledger.forEach((r, i) => {
+    const f = r.fields as unknown as Record<string, string>;
+    const keys = "IDEmisorFacturaAnulada" in f ? SPEC.anulacion : SPEC.alta;
+    const own = createHash("sha256").update(keys.map((k) => `${k}=${f[k]!.trim()}`).join("&"), "utf8").digest("hex").toUpperCase();
+    expect(own === r.fingerprint, () => `record ${i}: fingerprint doesn't follow the AEAT rule`);
+    expect(f.Huella === previous, () => `record ${i}: doesn't point at the record before it`);
+    previous = r.fingerprint;
+  });
   expect(ledger.length === docs.size, () => `${ledger.length} records for ${docs.size} documents`);
   expect((await verifyChain(ledger)).ok, () => "the Verifactu chain doesn't verify");
   if (ledger.length > 10) {
@@ -171,6 +197,6 @@ export async function runSimulation(orderCount: number, seed = 1): Promise<Repor
 
   return {
     orders: sims.length, refunds: sims.reduce((n, s) => n + s.refunds.length, 0), deliveries: events.length,
-    documents: docs.size + service.skipped.size, records: ledger.length, checks, failures, facts, seconds: (Date.now() - started) / 1000,
+    documents: docs.size, records: ledger.length, checks, failures, facts, seconds: (Date.now() - started) / 1000,
   };
 }

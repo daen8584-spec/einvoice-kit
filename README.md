@@ -22,11 +22,38 @@ Shopify doesn't issue invoices that are valid in Spain on its own, and from 2027
 
 The fingerprint is tested against the three worked examples in AEAT's technical specification: a first invoice, a second one chained to it, and a cancellation. All three hashes match exactly. That test also caught a real bug early on: the hash depended on the order the fields happened to be written in, so the field order is now fixed in code.
 
+## How I know the money is right
+
+Tax mistakes cost real money, so on top of the unit tests there's a simulated store ([`test/sim`](test/sim)). It creates random orders the way Shopify does: several VAT rates, prices with and without VAT, discount codes, free gifts, free shipping, partial and repeated refunds, mistyped tax IDs, orders around midnight, daylight saving changes and New Year. Every notification is sent one to three times, late and out of order, many at the same moment.
+
+The store works out what each customer paid and what each refund should give back with its own arithmetic (big integers, its own time zone rules, its own copy of the AEAT hash rule), then audits every document the app issued:
+
+- the invoice equals what the customer paid, to the cent, VAT included
+- partial refunds add up to exactly what was paid, and never more
+- one document per order or refund, however many times Shopify sends it
+- invoice numbers run 1, 2, 3... with no gaps, and dates never go backwards
+- dates follow Spanish time, and the sale date is kept when it differs
+- every Verifactu record follows the AEAT rule and points at the one before; editing, removing or swapping any record is caught at that exact record
+- anything that fails a check (a mistyped tax ID, a simplified invoice over €3,000) is held, never issued, and goes out once the order is fixed in Shopify
+
+Runs so far: over 650,000 simulated orders, about 10 million checks, no failures in the current version. The simulation found five real problems along the way, all fixed: refunds in parts could be a cent short, stores with prices before VAT could be a cent off, an empty credit note used up a number, invoices with errors were still issued, and a valid partial refund was held by an over-strict VAT check.
+
+To make sure the simulation isn't just passing, [`scripts/mutations.py`](scripts/mutations.py) breaks the app on purpose in ten different ways (wrong rounding, UTC dates, wrong hash order, duplicate handling removed...) and checks the simulation catches each one. It catches all ten. CI runs both on every change.
+
+```bash
+npm run simulate -- 100000      # 100,000 orders, about 3 minutes
+npm run mutations               # the ten deliberate bugs
+```
+
+No amount of testing makes software perfect. What this gives is a lot of evidence, a clear list of what's checked, and a design that stops rather than issues anything it isn't sure about.
+
 ## Decisions worth knowing about
 
 - **Money is whole cents and rates are basis points.** No floating point touches an amount.
 - **Tax is worked out per rate, not per line.** With prices that include VAT, the tax is taken out of each rate's total, so the invoice never disagrees with what was charged. A test checks this on 500 random invoices.
 - **Invoice dates use Spanish time.** An order at 00:30 in Madrid is dated that day, not the day before in UTC. The Canary Islands are an hour behind, and that's covered too.
+- **Invoices are dated when they're issued,** with the sale date kept separately. Shopify can deliver a later order first, and Spanish numbering has to follow the dates.
+- **Anything with an error is held, not issued.** No number is used and nothing reaches Verifactu until it's fixed.
 - **Shipping refunds are flagged, not guessed.** Shopify reports them as order adjustments. Until I've checked their exact format on a live store, the credit note gets a warning asking the owner to look at it.
 
 ## Running it
@@ -35,7 +62,7 @@ Requires Node 20 or later.
 
 ```bash
 npm install
-npm test          # 45 tests
+npm test          # 52 tests, including a 3,000-order store simulation
 npm run dev       # the checker at http://localhost:5173
 ```
 
