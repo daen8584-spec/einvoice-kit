@@ -21,6 +21,8 @@ describe("Shopify order to invoice", () => {
       { rate: 2100, base: 4128, tax: 867 },
       { rate: 400, base: 1817, tax: 73 },
     ]);
+    // These are the taxes Shopify charged on each line: 7.81 + 0.86 and 0.73.
+    expect(totals.groups.map((g) => g.tax)).toEqual([781 + 86, 73]);
     expect(warnings).toEqual([]);
   });
 
@@ -65,8 +67,23 @@ describe("Shopify refund to credit note", () => {
   const { invoice: credit, warnings } = refundToCreditNote(o, o.refunds![0]!, original, shop, "R2026-000001");
 
   it("refunds one shirt at the discounted price actually paid", () => {
-    expect(computeTotals(credit)).toMatchObject({ base: -1860, tax: -390, total: -2250 });
+    expect(computeTotals(credit)).toMatchObject({ base: -1859, tax: -391, total: -2250 });
     expect(warnings).toEqual([]);
+  });
+
+  it("refunds the second shirt for the rest, so both add up to exactly the line", () => {
+    const second = { id: 990000000002, created_at: "2026-04-08T10:00:00+02:00", refund_line_items: [{ line_item_id: 14000000000001, quantity: 1 }] };
+    const both = { ...o, refunds: [o.refunds![0]!, second] };
+    const t2 = computeTotals(refundToCreditNote(both, second, original, shop, "R2026-000002").invoice);
+    expect(t2).toMatchObject({ tax: -390, total: -2250 });
+    expect(-(t2.tax + computeTotals(credit).tax)).toBe(781);
+  });
+
+  it("never credits more units than were left to refund", () => {
+    const again = { id: 990000000003, created_at: "2026-04-09T10:00:00+02:00", refund_line_items: [{ line_item_id: 14000000000001, quantity: 2 }] };
+    const r = refundToCreditNote({ ...o, refunds: [o.refunds![0]!, again] }, again, original, shop, "R3");
+    expect(computeTotals(r.invoice).total).toBe(-2250);
+    expect(r.warnings).toHaveLength(1);
   });
 
   it("points at the original invoice and keeps the customer", () => {

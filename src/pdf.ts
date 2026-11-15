@@ -8,7 +8,7 @@ export type Lang = "es" | "en";
 const LABELS = {
   es: {
     invoice: "Factura", simplified: "Factura simplificada", credit: "Factura rectificativa",
-    number: "Número", date: "Fecha", order: "Pedido", seller: "Vendedor", buyer: "Cliente",
+    number: "Número", date: "Fecha", saleDate: "Fecha de operación", order: "Pedido", seller: "Vendedor", buyer: "Cliente",
     description: "Descripción", qty: "Cant.", price: "Precio", vat: "IVA", amount: "Importe",
     discount: "Descuento", base: "Base imponible", tax: "Cuota", total: "Total", corrects: "Rectifica la factura",
     reason: "Motivo", inclusive: "Precios con IVA incluido", exempt: "Exención",
@@ -16,7 +16,7 @@ const LABELS = {
   },
   en: {
     invoice: "Invoice", simplified: "Simplified invoice", credit: "Credit note",
-    number: "Number", date: "Date", order: "Order", seller: "Seller", buyer: "Customer",
+    number: "Number", date: "Date", saleDate: "Date of sale", order: "Order", seller: "Seller", buyer: "Customer",
     description: "Description", qty: "Qty", price: "Price", vat: "VAT", amount: "Amount",
     discount: "Discount", base: "Taxable base", tax: "Tax", total: "Total", corrects: "Corrects invoice",
     reason: "Reason", inclusive: "Prices include VAT", exempt: "Exemption",
@@ -78,7 +78,9 @@ export async function renderInvoicePdf(invoice: Invoice, options: PdfOptions = {
   text(title, M, y - 18, 20, bold);
   right(`${L.number}: ${invoice.number}`, M + W, y - 6, 10, bold);
   right(`${L.date}: ${invoice.issueDate.split("-").reverse().join("/")}`, M + W, y - 20);
-  if (invoice.reference) right(`${L.order}: ${invoice.reference}`, M + W, y - 34);
+  let headY = y - 34;
+  if (invoice.operationDate) { right(`${L.saleDate}: ${invoice.operationDate.split("-").reverse().join("/")}`, M + W, headY); headY -= 14; }
+  if (invoice.reference) right(`${L.order}: ${invoice.reference}`, M + W, headY);
   y -= 64;
 
   const party = (label: string, p: Party | undefined, x: number) => {

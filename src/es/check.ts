@@ -59,6 +59,9 @@ export function checkSpanishInvoice(invoice: Invoice, options: CheckOptions = {}
   else if (invoice.issueDate > today)
     issues.push(issue("error", "date", "La fecha de la factura está en el futuro.", "The invoice date is in the future.", "issueDate"));
 
+  if (invoice.operationDate && invoice.operationDate > invoice.issueDate)
+    issues.push(issue("error", "operation-date", "La fecha de la venta no puede ser posterior a la fecha de la factura.", "The sale date can't be after the invoice date.", "operationDate"));
+
   const buyerId = invoice.buyer?.taxId?.trim();
   if (buyerId) {
     const r = validateTaxId(buyerId);
@@ -96,6 +99,15 @@ export function checkSpanishInvoice(invoice: Invoice, options: CheckOptions = {}
       issues.push(issue("error", "corrects", "Una factura rectificativa tiene que indicar el número y la fecha de la factura que corrige.", "A corrective invoice has to give the number and date of the invoice it corrects.", "corrects"));
     if (!invoice.corrects?.reason?.trim())
       issues.push(issue("warning", "corrects-reason", "Indica el motivo de la rectificación, por ejemplo «devolución de mercancía».", "Give the reason for the correction, for example \"goods returned\".", "corrects.reason"));
+  }
+
+  // Shops round tax line by line, so a cent or so per line is normal. More than
+  // that means the tax doesn't belong to the rate shown.
+  for (const g of totals.groups) {
+    const linesAtRate = invoice.lines.filter((l) => l.rate === g.rate).length;
+    const expected = Math.round((g.base * g.rate) / 10000);
+    if (Math.abs(g.tax - expected) > Math.max(1, linesAtRate))
+      issues.push(issue("error", "tax-mismatch", `El IVA al ${g.rate / 100} % (${es(g.tax)}) no corresponde a su base imponible (${es(g.base)}).`, `The ${g.rate / 100}% VAT (${formatPlain(g.tax)}) doesn't match its taxable base (${formatPlain(g.base)}).`, "lines"));
   }
 
   if (options.statedTotal !== undefined && options.statedTotal !== totals.total)

@@ -22,6 +22,11 @@ export interface InvoiceLine {
   /** Discount on the whole line, on the same basis as the price. */
   discount?: Cents;
   rate: BasisPoints;
+  /**
+   * The tax actually charged on this line, when the shop already worked it out
+   * (Shopify does). Using it keeps the invoice equal to what the customer paid.
+   */
+  tax?: Cents;
   /** Required by most tax systems when the rate is 0: why no tax applies. */
   exemption?: string;
 }
@@ -35,8 +40,10 @@ export interface CorrectedInvoice {
 export interface Invoice {
   kind: "invoice" | "credit-note";
   number: string;
-  /** YYYY-MM-DD */
+  /** YYYY-MM-DD: the day the invoice is issued. */
   issueDate: string;
+  /** YYYY-MM-DD: the day of the sale, when it's earlier than the issue date. */
+  operationDate?: string;
   seller: Party;
   buyer?: Party;
   currency: string;
@@ -67,17 +74,26 @@ export function lineAmount(line: InvoiceLine): Cents {
 }
 
 /**
- * Tax is worked out once per rate, on the sum of that rate's lines, rather than
+ * If the lines carry the tax the shop charged, that's used as is. Otherwise tax
+ * is worked out once per rate, on the sum of that rate's lines, rather than
  * line by line. With tax-inclusive prices the tax is taken out of the sum, so the
  * invoice total always equals what the customer actually paid.
  */
 export function computeTotals(invoice: Pick<Invoice, "lines" | "pricesIncludeTax">): Totals {
-  const sums = new Map<BasisPoints, Cents>();
-  for (const line of invoice.lines) sums.set(line.rate, (sums.get(line.rate) ?? 0) + lineAmount(line));
+  const sums = new Map<BasisPoints, { amount: Cents; charged: Cents; allCharged: boolean }>();
+  for (const line of invoice.lines) {
+    const g = sums.get(line.rate) ?? { amount: 0, charged: 0, allCharged: true };
+    g.amount += lineAmount(line);
+    if (line.tax === undefined) g.allCharged = false;
+    else g.charged += line.tax;
+    sums.set(line.rate, g);
+  }
 
   const groups = [...sums.entries()]
     .sort(([a], [b]) => b - a)
-    .map(([rate, sum]): TaxGroup => {
+    .map(([rate, { amount: sum, charged, allCharged }]): TaxGroup => {
+      // When every line carries the tax the shop charged, that's the tax.
+      if (allCharged) return invoice.pricesIncludeTax ? { rate, base: sum - charged, tax: charged } : { rate, base: sum, tax: charged };
       if (invoice.pricesIncludeTax) {
         const tax = roundDiv(sum * rate, 10000 + rate);
         return { rate, base: sum - tax, tax };

@@ -5,5 +5,7 @@ export * from "./pdf.js";
 export * from "./es/nif.js";
 export * from "./es/verifactu.js";
 export * from "./es/check.js";
+export * from "./es/verify.js";
+export * from "./app.js";
 export * from "./shopify/types.js";
 export * from "./shopify/to-invoice.js";
