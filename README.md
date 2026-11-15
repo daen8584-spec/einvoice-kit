@@ -36,7 +36,7 @@ The store works out what each customer paid and what each refund should give bac
 - every Verifactu record follows the AEAT rule and points at the one before; editing, removing or swapping any record is caught at that exact record
 - anything that fails a check (a mistyped tax ID, a simplified invoice over €3,000) is held, never issued, and goes out once the order is fixed in Shopify
 
-Runs so far: over 650,000 simulated orders, about 10 million checks, no failures in the current version. The simulation found five real problems along the way, all fixed: refunds in parts could be a cent short, stores with prices before VAT could be a cent off, an empty credit note used up a number, invoices with errors were still issued, and a valid partial refund was held by an over-strict VAT check.
+The current version has been through 450,000 simulated orders and about 8.8 million checks with no failures. The simulation found five real problems along the way, all fixed: refunds in parts could be a cent short, stores with prices before VAT could be a cent off, an empty credit note used up a number, invoices with errors were still issued, and a valid partial refund was held by an over-strict VAT check.
 
 To make sure the simulation isn't just passing, [`scripts/mutations.py`](scripts/mutations.py) breaks the app on purpose in ten different ways (wrong rounding, UTC dates, wrong hash order, duplicate handling removed...) and checks the simulation catches each one. It catches all ten. CI runs both on every change.
 
