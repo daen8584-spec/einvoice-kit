@@ -24,6 +24,14 @@ const APP_SCHEMA = `
     last_error text, processed_at text
   );
   create index if not exists inbox_due on inbox (status, next_attempt_at);
+  -- Documents already copied into the store's own Shopify orders.
+  create table if not exists copies (
+    shop text not null, key text not null, saved_at text not null,
+    primary key (shop, key)
+  );
+  create table if not exists copy_errors (
+    shop text primary key, error text not null, at text not null
+  );
   -- Which version of the terms each shop accepted, and when.
   create table if not exists agreements (
     shop text not null, version integer not null, accepted_at text not null,

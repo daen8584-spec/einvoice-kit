@@ -69,7 +69,7 @@ Requires Node 20 or later.
 
 ```bash
 npm install
-npm test          # 99 tests, including the store simulation, real Shopify orders and the app end to end
+npm test          # 102 tests, including the store simulation, real Shopify orders and the app end to end
 npm run dev       # the checker at http://localhost:5173
 ```
 
@@ -90,7 +90,7 @@ To try it on an Android phone, there's a [Termux script](scripts/try-on-termux.s
 - **Customer data is encrypted at rest** (AES-256-GCM): invoices, held drafts, waiting refunds and saved notifications. The Verifactu chain holds no customer data, so it stays readable and checkable without the key. Data written by older versions is encrypted on the next start.
 - **Only what invoices need**: no customer emails or phone numbers, no tracking. Notifications are emptied once handled and deleted after 30 days.
 - **Deleted on uninstall**: Shopify's `shop/redact`, sent 48 hours after an uninstall, deletes everything about the shop.
-- **The shop keeps its own copies**: the app doesn't promise long-term storage, so "Download everything" gives a ZIP with every invoice as a PDF, a CSV for Spanish Excel and the Verifactu records.
+- **Copies stay with the shop**: the app doesn't promise long-term storage, so it copies each order's invoices into a merchant-owned metafield on that order ("Facturas (einvoice-kit)"). It's private to the shop's admin and stays after an uninstall. Shopify Files would have been simpler, but their URLs are public and invoices carry customers' tax IDs. "Download everything" also gives a ZIP with every invoice as a PDF, a CSV for Spanish Excel and the Verifactu records.
 - **Draft legal texts** in Spanish and English, published with the checker: [privacy policy](https://daen8584-spec.github.io/einvoice-kit/legal/privacidad.html) and [terms with the data processing agreement](https://daen8584-spec.github.io/einvoice-kit/legal/terminos.html). Shops accept them in the app before it starts invoicing for them.
 
 [`test/server.test.ts`](test/server.test.ts) runs the whole app against a stand-in for Shopify that serves the real test-store orders: forged and repeated webhooks, bad ID tokens, token refresh, Shopify being down, uninstalling, and every invoice and credit note checked against Shopify's figures.
