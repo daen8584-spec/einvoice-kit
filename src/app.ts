@@ -23,7 +23,6 @@ const errorsIn = (issues: Issue[]) => issues.filter((i) => i.level === "error");
  * that keeps documents in order lives in memory.
  */
 export class InvoiceService {
-  private readonly inFlight = new Map<string, Promise<Outcome>>();
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(
@@ -80,9 +79,12 @@ export class InvoiceService {
     for (const { order, refund } of waiting) await this.refundOutcome(order, refund, original);
   }
 
-  private async refundOutcome(order: ShopifyOrder, refund: ShopifyRefund, original: IssuedDocument | HeldDocument): Promise<Outcome> {
+  private async refundOutcome(order: ShopifyOrder, refund: ShopifyRefund, seen: IssuedDocument | HeldDocument): Promise<Outcome> {
     const outcome = await this.once(`refund:${refund.id}`, async (key) => {
       const issuedAt = this.clock();
+      // What the invoice is now, on this refund's turn: it may have been issued by
+      // a correction handled in between.
+      const original: IssuedDocument | HeldDocument = this.store.document(`order:${order.id}`) ?? seen;
       if ("held" in original) {
         this.store.addWaitingRefund(order.id, { order, refund });
         const message = { level: "error" as const, code: "invoice-held", es: "La factura de este pedido está retenida. La rectificativa se emitirá cuando se corrija.", en: "This order's invoice is on hold. The credit note will be issued once it's corrected." };
@@ -130,12 +132,17 @@ export class InvoiceService {
   /**
    * Runs `make` at most once per key (a held document is tried again), and only
    * one document at a time across all keys.
+   *
+   * A request that arrives while another for the same key is running waits its
+   * turn and is then handled with its own data. Sharing the running one's result
+   * looked like a harmless shortcut, but when the other request carried an older
+   * copy of the order, a correction arriving at the same moment was thrown away
+   * and the order stayed on hold. Duplicates still issue nothing twice: by their
+   * turn the document exists.
    */
   private once(key: string, make: (key: string) => Promise<Outcome>): Promise<Outcome> {
     const done = this.store.document(key) ?? this.store.skippedRefund(key);
     if (done) return Promise.resolve(done);
-    const running = this.inFlight.get(key);
-    if (running) return running;
 
     const job = this.queue.then(async () => {
       const again = this.store.document(key) ?? this.store.skippedRefund(key);
@@ -146,8 +153,6 @@ export class InvoiceService {
       return outcome;
     });
     this.queue = job.catch(() => undefined);
-    this.inFlight.set(key, job);
-    void job.finally(() => this.inFlight.delete(key)).catch(() => undefined);
     return job;
   }
 }

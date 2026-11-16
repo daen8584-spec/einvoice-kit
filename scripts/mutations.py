@@ -1,8 +1,8 @@
 """
 Breaks the app on purpose, one way at a time, and checks the simulation notices.
 A simulation that still passes with a bug in place would be giving false comfort.
-Each bug is run against the simulated store, then the real Shopify test-store data
-and the database tests.
+Each bug is run against the simulated store, then the real Shopify test-store data,
+the database tests and the app's notification tests.
 
 Run:  python3 scripts/mutations.py
 """
@@ -16,10 +16,12 @@ MUTATIONS = [
      "src/shopify/to-invoice.ts",
      "return Math.round((total * (from + count)) / quantity) - Math.round((total * from) / quantity);",
      "return Math.round((total * count) / quantity);"),
-    ("Forget that a notification is already being handled",
+    ("Forget that a notification was already handled",
+     "src/app.ts", "const again = this.store.document(key) ?? this.store.skippedRefund(key);", "const again = undefined;"),
+    ("Share the result of an order already being handled, dropping a later correction",
      "src/app.ts",
-     "    if (running) return running;\n\n    const job = this.queue.then(async () => {\n      const again = this.store.document(key) ?? this.store.skippedRefund(key);",
-     "\n    const job = this.queue.then(async () => {\n      const again = undefined;"),
+     "    const job = this.queue.then(async () => {\n      const again = this.store.document(key) ?? this.store.skippedRefund(key);\n      if (again) return again;\n      const outcome = await make(key);\n      if (\"skipped\" in outcome) this.store.saveSkipped(outcome);\n      else if (\"held\" in outcome) this.store.saveHeld(outcome);\n      return outcome;\n    });\n    this.queue = job.catch(() => undefined);\n    return job;",
+     "    const shared: Map<string, Promise<Outcome>> = ((this as any).shared ??= new Map());\n    const running = shared.get(key);\n    if (running) return running;\n    const job = this.queue.then(async () => {\n      const again = this.store.document(key) ?? this.store.skippedRefund(key);\n      if (again) return again;\n      const outcome = await make(key);\n      if (\"skipped\" in outcome) this.store.saveSkipped(outcome);\n      else if (\"held\" in outcome) this.store.saveHeld(outcome);\n      return outcome;\n    });\n    this.queue = job.catch(() => undefined);\n    shared.set(key, job);\n    void job.finally(() => shared.delete(key)).catch(() => undefined);\n    return job;"),
     ("Date invoices in UTC instead of Spanish time",
      "src/shopify/to-invoice.ts", 'new Intl.DateTimeFormat("en-GB", { timeZone, year', 'new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", year'),
     ("Handle notifications at the same time instead of one by one",
@@ -53,7 +55,7 @@ for name, file, old, new in MUTATIONS:
         # The simulated store, then the real orders and refunds from the Shopify test store.
         r = subprocess.run(["npx", "vite-node", "scripts/simulate.ts", "3000", "2026"], cwd=ROOT, capture_output=True, text=True, timeout=600)
         if r.returncode == 0:
-            live = subprocess.run(["npx", "vitest", "run", "test/live.test.ts", "test/store.test.ts"], cwd=ROOT, capture_output=True, text=True, timeout=900)
+            live = subprocess.run(["npx", "vitest", "run", "test/live.test.ts", "test/store.test.ts", "test/app.test.ts"], cwd=ROOT, capture_output=True, text=True, timeout=900)
             if live.returncode != 0:
                 failed = [l.strip() for l in live.stdout.splitlines() if "×" in l or "FAIL" in l]
                 r = subprocess.CompletedProcess(r.args, 1, stdout="1 FAILED:\n- tests: " + (failed[0] if failed else "live test failed"), stderr="")
