@@ -17,7 +17,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { buildApp } from "./app.js";
 import { openAppDatabase } from "./db.js";
-import { ShopifyClient, TokenCipher } from "./shopify.js";
+import { Cipher, pack } from "../src/crypto.js";
+import { encryptExistingRows } from "../src/sqlite-store.js";
+import { ShopifyClient } from "./shopify.js";
 import { Worker } from "./worker.js";
 
 function required(name: string): string {
@@ -34,7 +36,11 @@ const secret = required("SHOPIFY_API_SECRET");
 const path = process.env.DATABASE_PATH ?? "data/einvoice.db";
 mkdirSync(dirname(path), { recursive: true });
 
-/** The key that encrypts access tokens. Losing it means every shop opens the app again to get a new token. */
+/**
+ * The master key. Access tokens are encrypted with it, and invoices with a key
+ * derived from it. Losing it makes stored invoices unreadable, so keep it with the
+ * database, and keep it out of the same backup when you can.
+ */
 function tokenKey(): string {
   if (process.env.TOKEN_ENCRYPTION_KEY) return process.env.TOKEN_ENCRYPTION_KEY;
   const file = join(dirname(path), "token-key");
@@ -44,15 +50,26 @@ function tokenKey(): string {
   }
   return readFileSync(file, "utf8").trim();
 }
-const cipher = new TokenCipher(tokenKey());
+const cipher = new Cipher(tokenKey());
+const documents = cipher.derive("documents");
 
 const db = openAppDatabase(path);
+// Rows saved by versions that didn't encrypt them yet.
+const encrypted = encryptExistingRows(db, documents);
+const plainEvents = db.prepare("select webhook_id, payload from inbox where payload != '' and payload not like 'enc1:%'").all() as { webhook_id: string; payload: string }[];
+for (const e of plainEvents) db.prepare("update inbox set payload = ? where webhook_id = ?").run(pack(e.payload, documents), e.webhook_id);
+db.prepare("update inbox set payload = '' where status = 'done'").run();
+if (encrypted + plainEvents.length) console.warn(`Encrypted ${encrypted + plainEvents.length} stored records.`);
+
 const shopify = new ShopifyClient({ apiKey, secret, cipher, db });
-const worker = new Worker(db, shopify, Date.now, (msg) => console.warn(msg));
+const worker = new Worker(db, shopify, Date.now, (msg) => console.warn(msg), documents);
 const app = buildApp({ apiKey, secret, db, shopify, worker, logger: true });
 
-// Retries and anything left over from before a restart.
-const timer = setInterval(() => void worker.drain(), 30_000);
+// Retries and anything left over from before a restart; old notifications forgotten.
+const timer = setInterval(() => {
+  void worker.drain();
+  worker.purge();
+}, 30_000);
 void worker.drain();
 
 await app.listen({ port: Number(process.env.PORT ?? 3000), host: process.env.BIND_ADDRESS ?? "0.0.0.0" });

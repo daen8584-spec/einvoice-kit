@@ -5,6 +5,7 @@ import { buildApp, logSerializers } from "../server/app.js";
 import { openAppDatabase } from "../server/db.js";
 import { ShopifyClient, signIdToken, TokenCipher } from "../server/shopify.js";
 import { TOPICS, Worker } from "../server/worker.js";
+import { Cipher } from "../src/crypto.js";
 import { verifyChain } from "../src/es/verify.js";
 import { toCents } from "../src/money.js";
 import type { GraphQLOrder } from "../src/shopify/from-graphql.js";
@@ -81,7 +82,7 @@ beforeEach(() => {
   shopify = new FakeShopify(() => now);
   db = openAppDatabase(":memory:");
   const client = new ShopifyClient({ apiKey: API_KEY, secret: SECRET, cipher: new TokenCipher(randomBytes(32).toString("base64")), db, fetch: shopify.fetch, now: () => now });
-  worker = new Worker(db, client, () => now);
+  worker = new Worker(db, client, () => now, undefined, new Cipher(randomBytes(32)).derive("documents"));
   app = buildApp({ apiKey: API_KEY, secret: SECRET, db, shopify: client, worker, now: () => now });
 });
 
@@ -235,6 +236,62 @@ describe("from Shopify notification to invoice", () => {
     await worker.drain();
     const o = await openApp();
     expect(o.documents.map((d: { number: string }) => d.number).sort()).toEqual(["F2026-000001", "R2026-000001"]);
+  });
+});
+
+describe("what the app keeps", () => {
+  it("encrypts waiting notifications and empties them once handled", async () => {
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    shopify.down = true;
+    await webhook(TOPICS.orderPaid, { id: orderId("#1003"), email: "cliente@example.com" });
+    await worker.drain(); // the first attempt fails while Shopify is down
+    const waiting = db.prepare("select payload from inbox where topic = ?").get(TOPICS.orderPaid) as { payload: string };
+    expect(waiting.payload.startsWith("enc1:")).toBe(true);
+    expect(waiting.payload).not.toContain("cliente@example.com");
+    shopify.down = false;
+    now += 60_000;
+    await worker.drain();
+    const done = db.prepare("select status, payload from inbox where topic = ?").get(TOPICS.orderPaid) as { status: string; payload: string };
+    expect(done).toEqual({ status: "done", payload: "" });
+  });
+
+  it("forgets handled notifications after 30 days", async () => {
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    await webhook(TOPICS.orderPaid, { id: orderId("#1003") });
+    await worker.drain();
+    now += 29 * 24 * 3600_000;
+    expect(worker.purge()).toBe(0);
+    now += 2 * 24 * 3600_000;
+    expect(worker.purge()).toBeGreaterThan(0);
+    const n = db.prepare("select count(*) as n from inbox where topic = ?").get(TOPICS.orderPaid) as { n: number };
+    expect(n.n).toBe(0);
+    expect((await openApp()).issued).toBe(1); // the invoice itself stays
+  });
+
+  it("deletes everything about a shop when Shopify asks, and nothing of other shops", async () => {
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    await webhook(TOPICS.orderPaid, { id: orderId("#1003") });
+    await worker.drain();
+    db.prepare("insert into settings (shop, json, updated_at) values ('other.myshopify.com', '{}', 'x')").run();
+
+    await webhook("shop/redact", { shop_domain: SHOP });
+    await worker.drain();
+    for (const table of ["documents", "ledger", "series", "held", "skipped", "waiting_refunds", "settings", "shops"]) {
+      const n = db.prepare(`select count(*) as n from ${table} where shop = ?`).get(SHOP) as { n: number };
+      expect(n.n, table).toBe(0);
+    }
+    const other = db.prepare("select count(*) as n from settings where shop = 'other.myshopify.com'").get() as { n: number };
+    expect(other.n).toBe(1);
+  });
+
+  it("logs customer privacy requests with the orders only, not the customer's details", async () => {
+    await webhook("customers/data_request", { shop_domain: SHOP, customer: { id: 1, email: "cliente@example.com", phone: "+34600000000" }, orders_requested: [7, 8] });
+    await worker.drain();
+    const row = db.prepare("select payload from compliance_requests").get() as { payload: string };
+    expect(JSON.parse(row.payload)).toEqual({ orders: [7, 8] });
   });
 });
 

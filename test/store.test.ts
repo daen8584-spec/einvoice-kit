@@ -5,7 +5,8 @@ import { afterAll, describe, expect, it } from "vitest";
 import order from "./fixtures/order-es.json";
 import { InvoiceService } from "../src/app.js";
 import { verifyChain } from "../src/es/verify.js";
-import { openDatabase, SqliteStore } from "../src/sqlite-store.js";
+import { Cipher } from "../src/crypto.js";
+import { encryptExistingRows, openDatabase, SqliteStore } from "../src/sqlite-store.js";
 import { MemoryStore, StoreConflict, type DocumentStore, type IssuedDocument } from "../src/store.js";
 import type { ShopifyOrder } from "../src/shopify/types.js";
 import { runSimulation } from "./sim/run.js";
@@ -81,5 +82,56 @@ describe("SQLite store", () => {
       expect(store.allDocuments().map((d) => d.invoice.number)).toEqual(["F2026-000001"]);
       expect(await verifyChain(store.ledger())).toEqual({ ok: true });
     }
+  });
+});
+
+describe("encryption at rest", () => {
+  const key = () => new Cipher(Buffer.alloc(32, 7)).derive("documents");
+  // The fixture's customer gives a tax ID, so the invoice carries their name and address.
+  const customerDetails = ["Papelería Martín", "B12345674", "Calle Mayor 12"];
+  const rawText = (db: ReturnType<typeof openDatabase>) =>
+    JSON.stringify([
+      ...db.prepare("select * from documents").all(),
+      ...db.prepare("select * from held").all(),
+      ...db.prepare("select * from waiting_refunds").all(),
+    ]);
+
+  it("keeps customer details out of the database file, and reads them back", async () => {
+    const db = openDatabase(":memory:");
+    const store = new SqliteStore(db, "a.myshopify.com", key());
+    const app = new InvoiceService(shop, store, clock);
+    await app.onOrder(o);
+    await app.onRefund(o, o.refunds![0]!);
+    const raw = rawText(db);
+    for (const detail of customerDetails) expect(raw).not.toContain(detail);
+    expect(store.document(`order:${o.id}`)?.invoice.buyer?.name).toBe("Papelería Martín SL");
+    // The Verifactu chain stays readable and checkable without the key.
+    expect(await verifyChain(new SqliteStore(db, "a.myshopify.com").ledger())).toEqual({ ok: true });
+  });
+
+  it("encrypts held drafts too", async () => {
+    const db = openDatabase(":memory:");
+    const typo = { ...o, note_attributes: [{ name: "NIF", value: "B12345675" }] };
+    await new InvoiceService(shop, new SqliteStore(db, "a.myshopify.com", key()), clock).onOrder(typo);
+    expect(rawText(db)).not.toContain("Papelería Martín");
+  });
+
+  it("reads older unencrypted rows and encrypts them in place", async () => {
+    const db = openDatabase(":memory:");
+    await new InvoiceService(shop, new SqliteStore(db, "a.myshopify.com"), clock).onOrder(o);
+    expect(rawText(db)).toContain("Papelería Martín");
+    const store = new SqliteStore(db, "a.myshopify.com", key());
+    expect(store.document(`order:${o.id}`)?.invoice.number).toBe("F2026-000001");
+    expect(encryptExistingRows(db, key())).toBe(1);
+    expect(encryptExistingRows(db, key())).toBe(0);
+    expect(rawText(db)).not.toContain("Papelería Martín");
+    expect(store.document(`order:${o.id}`)?.invoice.buyer?.taxId).toBe("B12345674");
+  });
+
+  it("can't be read without the key, or with another key", async () => {
+    const db = openDatabase(":memory:");
+    await new InvoiceService(shop, new SqliteStore(db, "a.myshopify.com", key()), clock).onOrder(o);
+    expect(() => new SqliteStore(db, "a.myshopify.com").allDocuments()).toThrow(/no key/);
+    expect(() => new SqliteStore(db, "a.myshopify.com", new Cipher(Buffer.alloc(32, 8))).allDocuments()).toThrow();
   });
 });

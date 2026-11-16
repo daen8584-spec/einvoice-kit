@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync as Database } from "node:sqlite";
 import type { GraphQLOrder } from "../src/shopify/from-graphql.js";
 
@@ -66,26 +66,9 @@ export function verifyIdToken(token: string, apiKey: string, secret: string, now
   return claims.sub ? { shop: dest.hostname, sub: claims.sub } : { shop: dest.hostname };
 }
 
-/** Access tokens are encrypted at rest with AES-256-GCM. */
-export class TokenCipher {
-  private readonly key: Buffer;
-  constructor(keyBase64: string) {
-    this.key = Buffer.from(keyBase64, "base64");
-    if (this.key.length !== 32) throw new Error("TOKEN_ENCRYPTION_KEY must be 32 bytes, base64-encoded");
-  }
-  seal(plain: string): string {
-    const iv = randomBytes(12);
-    const c = createCipheriv("aes-256-gcm", this.key, iv);
-    const data = Buffer.concat([c.update(plain, "utf8"), c.final()]);
-    return [iv, c.getAuthTag(), data].map((b) => b.toString("base64")).join(".");
-  }
-  open(sealed: string): string {
-    const [iv, tag, data] = sealed.split(".").map((p) => Buffer.from(p, "base64")) as [Buffer, Buffer, Buffer];
-    const d = createDecipheriv("aes-256-gcm", this.key, iv);
-    d.setAuthTag(tag);
-    return Buffer.concat([d.update(data), d.final()]).toString("utf8");
-  }
-}
+/** Access tokens are encrypted at rest with AES-256-GCM, using the master key as before. */
+export { Cipher as TokenCipher } from "../src/crypto.js";
+import type { Cipher } from "../src/crypto.js";
 
 export class ShopifyUnavailable extends Error {}
 
@@ -108,7 +91,7 @@ interface TokenResponse {
 export interface ShopifyClientOptions {
   apiKey: string;
   secret: string;
-  cipher: TokenCipher;
+  cipher: Cipher;
   db: Database;
   fetch?: Fetch;
   now?: () => number;

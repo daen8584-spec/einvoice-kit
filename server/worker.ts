@@ -1,6 +1,7 @@
 import type { DatabaseSync as Database } from "node:sqlite";
 import { InvoiceService } from "../src/app.js";
 import { fromGraphQL } from "../src/shopify/from-graphql.js";
+import { pack, unpack, type Cipher } from "../src/crypto.js";
 import { SqliteStore } from "../src/sqlite-store.js";
 import { loadSettings, UNCONFIGURED } from "./db.js";
 import { AccessDenied, ShopifyUnavailable, type ShopifyClient } from "./shopify.js";
@@ -46,13 +47,15 @@ export class Worker {
     private readonly shopify: ShopifyClient,
     private readonly now: () => number = Date.now,
     private readonly log: (msg: string) => void = () => {},
+    /** Encrypts saved notifications and the shop's documents. */
+    private readonly cipher?: Cipher,
   ) {}
 
   /** Saves an event. Returns false when this delivery was already saved. */
   enqueue(webhookId: string, shop: string, topic: string, payload: string): boolean {
     const r = this.db
       .prepare("insert or ignore into inbox (webhook_id, shop, topic, payload, received_at) values (?, ?, ?, ?, ?)")
-      .run(webhookId, shop, topic, payload, new Date(this.now()).toISOString());
+      .run(webhookId, shop, topic, this.cipher ? pack(payload, this.cipher) : payload, new Date(this.now()).toISOString());
     return r.changes > 0;
   }
 
@@ -93,7 +96,8 @@ export class Worker {
     for (const row of rows) {
       try {
         await this.handle(row);
-        this.db.prepare("update inbox set status = 'done', processed_at = ?, last_error = null where webhook_id = ?").run(new Date(this.now()).toISOString(), row.webhook_id);
+        // Done: the notification's contents (which can include customer details) aren't kept.
+        this.db.prepare("update inbox set status = 'done', processed_at = ?, last_error = null, payload = '' where webhook_id = ?").run(new Date(this.now()).toISOString(), row.webhook_id);
       } catch (error) {
         const attempts = row.attempts + 1;
         const giveUp = attempts >= MAX_ATTEMPTS && !(error instanceof ShopifyUnavailable);
@@ -109,11 +113,12 @@ export class Worker {
 
   service(shop: string): InvoiceService {
     const settings = loadSettings(this.db, shop) ?? UNCONFIGURED;
-    return new InvoiceService(settings, new SqliteStore(this.db, shop), () => new Date(this.now()));
+    return new InvoiceService(settings, new SqliteStore(this.db, shop, this.cipher), () => new Date(this.now()));
   }
 
   private async handle(row: InboxRow): Promise<void> {
-    const payload = JSON.parse(row.payload) as { id?: number; order_id?: number };
+    const text = row.payload.startsWith("enc1:") ? unpack<string>(row.payload, this.cipher) : row.payload;
+    const payload = JSON.parse(text) as Record<string, unknown> & { id?: number; order_id?: number };
     const app = this.service(row.shop);
 
     switch (row.topic) {
@@ -147,20 +152,51 @@ export class Worker {
         this.shopify.forget(row.shop);
         return;
       }
+      case "shop/redact": {
+        // Shopify sends this 48 hours after a shop uninstalls the app: delete everything.
+        deleteShop(this.db, row.shop);
+        this.record(row.shop, row.topic, {});
+        return;
+      }
       default:
         if (COMPLIANCE_TOPICS.includes(row.topic)) {
-          this.db
-            .prepare("insert into compliance_requests (shop, topic, payload, received_at) values (?, ?, ?, ?)")
-            .run(row.shop, row.topic, row.payload, new Date(this.now()).toISOString());
+          // Only which orders were involved: the customer's email and phone aren't kept.
+          const orders = (payload.orders_requested ?? payload.orders_to_redact ?? []) as number[];
+          this.record(row.shop, row.topic, { orders });
           return;
         }
         this.log(`ignoring unknown topic ${row.topic}`);
     }
   }
 
+  private record(shop: string, topic: string, details: object): void {
+    this.db
+      .prepare("insert into compliance_requests (shop, topic, payload, received_at) values (?, ?, ?, ?)")
+      .run(shop, topic, JSON.stringify(details), new Date(this.now()).toISOString());
+  }
+
+  /** Processed notifications are forgotten after 30 days. */
+  purge(): number {
+    const cutoff = new Date(this.now() - 30 * 24 * 3600_000).toISOString();
+    return Number(this.db.prepare("delete from inbox where status = 'done' and processed_at < ?").run(cutoff).changes);
+  }
+
   private async processOrder(app: InvoiceService, shop: string, id: number): Promise<void> {
     const raw = await this.shopify.fetchOrder(shop, id);
     if (!raw) throw new Error(`order ${id} not found`);
     await app.onOrder(fromGraphQL(raw));
+  }
+}
+
+/** Every trace of a shop: invoices, records, settings, tokens and notifications. */
+export function deleteShop(db: Database, shop: string): void {
+  db.exec("begin immediate");
+  try {
+    for (const table of ["documents", "ledger", "series", "held", "skipped", "waiting_refunds", "settings", "shops", "inbox"])
+      db.prepare(`delete from ${table} where shop = ?`).run(shop);
+    db.exec("commit");
+  } catch (error) {
+    db.exec("rollback");
+    throw error;
   }
 }
