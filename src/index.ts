@@ -9,3 +9,4 @@ export * from "./es/verify.js";
 export * from "./app.js";
 export * from "./shopify/types.js";
 export * from "./shopify/to-invoice.js";
+export * from "./shopify/from-graphql.js";

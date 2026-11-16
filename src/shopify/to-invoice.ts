@@ -124,7 +124,8 @@ export function orderToInvoice(order: ShopifyOrder, settings: ShopSettings, numb
 
 /**
  * A refund becomes a credit note with negative lines, pointing at the original
- * invoice. Each refunded unit takes its exact share of what was paid for the line,
+ * invoice. It uses the amount and VAT Shopify reports for each refunded item.
+ * Without those, each unit takes its share of what was paid for the line,
  * discount and tax included, counting units refunded earlier on the same order.
  */
 export function refundToCreditNote(
@@ -159,9 +160,12 @@ export function refundToCreditNote(
     if (count <= 0) continue;
 
     const full = itemLine(item, settings.exemptionText);
+    // Shopify says exactly what it refunded; that's what the customer got back,
+    // so it's what the credit note shows. Our own split is only a fallback.
+    const exact = r.subtotal !== undefined && r.total_tax !== undefined && count === r.quantity;
     const paid = full.unitPrice * item.quantity - (full.discount ?? 0);
-    const amount = share(paid, item.quantity, before, count);
-    const tax = share(full.tax ?? 0, item.quantity, before, count);
+    const amount = exact ? toCents(r.subtotal!) : share(paid, item.quantity, before, count);
+    const tax = exact ? toCents(r.total_tax!) : share(full.tax ?? 0, item.quantity, before, count);
     const line: InvoiceLine = {
       description: full.description,
       quantity: -count,

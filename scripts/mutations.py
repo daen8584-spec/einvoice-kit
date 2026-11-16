@@ -1,6 +1,7 @@
 """
 Breaks the app on purpose, one way at a time, and checks the simulation notices.
 A simulation that still passes with a bug in place would be giving false comfort.
+Each bug is run against the simulated store and then the real Shopify test-store data.
 
 Run:  python3 scripts/mutations.py
 """
@@ -31,6 +32,8 @@ MUTATIONS = [
      'await nextNumber(this.sequences, "R", this.issueDate(issuedAt), key + ":early");\n      const draft = refundToCreditNote(order, refund, original.invoice, this.settings, this.placeholder("R", issuedAt), issuedAt);'),
     ("Issue invoices even when a check finds an error",
      "src/app.ts", 'const errorsIn = (issues: Issue[]) => issues.filter((i) => i.level === "error");', "const errorsIn = (_issues: Issue[]): Issue[] => [];"),
+    ("Ignore the refund amounts Shopify reports and split them ourselves",
+     "src/shopify/to-invoice.ts", "const exact = r.subtotal !== undefined", "const exact = false && r.subtotal !== undefined"),
     ("Never retry the refunds that waited for a held invoice",
      "src/app.ts", 'if (!("held" in outcome) && waiting?.size) {', 'if (false) {'),
 ]
@@ -45,7 +48,13 @@ for name, file, old, new in MUTATIONS:
         continue
     path.write_text(original.replace(old, new), encoding="utf8")
     try:
+        # The simulated store, then the real orders and refunds from the Shopify test store.
         r = subprocess.run(["npx", "vite-node", "scripts/simulate.ts", "3000", "2026"], cwd=ROOT, capture_output=True, text=True, timeout=600)
+        if r.returncode == 0:
+            live = subprocess.run(["npx", "vitest", "run", "test/live.test.ts"], cwd=ROOT, capture_output=True, text=True, timeout=600)
+            if live.returncode != 0:
+                failed = [l.strip() for l in live.stdout.splitlines() if "×" in l or "FAIL" in l]
+                r = subprocess.CompletedProcess(r.args, 1, stdout="1 FAILED:\n- real Shopify data: " + (failed[0] if failed else "live test failed"), stderr="")
     finally:
         path.write_text(original, encoding="utf8")
     if r.returncode == 0:

@@ -38,11 +38,17 @@ The store works out what each customer paid and what each refund should give bac
 
 The current version has been through 450,000 simulated orders and about 8.8 million checks with no failures. The simulation found five real problems along the way, all fixed: refunds in parts could be a cent short, stores with prices before VAT could be a cent off, an empty credit note used up a number, invoices with errors were still issued, and a valid partial refund was held by an over-strict VAT check.
 
-To make sure the simulation isn't just passing, [`scripts/mutations.py`](scripts/mutations.py) breaks the app on purpose in ten different ways (wrong rounding, UTC dates, wrong hash order, duplicate handling removed...) and checks the simulation catches each one. It catches all ten. CI runs both on every change.
+### Tested on a real Shopify store
+
+A simulation can only be as right as its idea of how Shopify behaves, so the code is also checked against real orders and refunds from a Shopify development store ([`test/live.test.ts`](test/live.test.ts)): Spanish VAT at 21%, prices including VAT, line and order discounts stacked on the same item, an order over €3,000 without a tax ID, and one item refunded one unit at a time.
+
+Every invoice matched Shopify's total and VAT to the cent, and the €3,799.80 order was held. The refunds found something the simulation couldn't: when a refund lands on half a cent, Shopify rounds the first refund down, and my own split rounded it up, so one credit note came out a cent higher than what the customer got back. Credit notes now use the exact amount and VAT Shopify reports for each refunded item, and the test checks every one against Shopify's figures.
+
+To make sure the simulation isn't just passing, [`scripts/mutations.py`](scripts/mutations.py) breaks the app on purpose in eleven different ways (wrong rounding, UTC dates, wrong hash order, duplicate handling removed...) and checks the simulation or the real-store test catches each one. They catch all eleven. CI runs both on every change.
 
 ```bash
 npm run simulate -- 100000      # 100,000 orders, about 3 minutes
-npm run mutations               # the ten deliberate bugs
+npm run mutations               # the eleven deliberate bugs
 ```
 
 No amount of testing makes software perfect. What this gives is a lot of evidence, a clear list of what's checked, and a design that stops rather than issues anything it isn't sure about.
@@ -54,6 +60,7 @@ No amount of testing makes software perfect. What this gives is a lot of evidenc
 - **Invoice dates use Spanish time.** An order at 00:30 in Madrid is dated that day, not the day before in UTC. The Canary Islands are an hour behind, and that's covered too.
 - **Invoices are dated when they're issued,** with the sale date kept separately. Shopify can deliver a later order first, and Spanish numbering has to follow the dates.
 - **Anything with an error is held, not issued.** No number is used and nothing reaches Verifactu until it's fixed.
+- **Shopify's numbers win.** Invoices use the VAT Shopify charged on each line, and credit notes use the amount and VAT Shopify refunded. My own calculations are only a fallback.
 - **Shipping refunds are flagged, not guessed.** Shopify reports them as order adjustments. Until I've checked their exact format on a live store, the credit note gets a warning asking the owner to look at it.
 
 ## Running it
@@ -62,7 +69,7 @@ Requires Node 20 or later.
 
 ```bash
 npm install
-npm test          # 52 tests, including a 3,000-order store simulation
+npm test          # 59 tests, including a 3,000-order simulation and real Shopify orders
 npm run dev       # the checker at http://localhost:5173
 ```
 
@@ -70,7 +77,7 @@ To try it on an Android phone, there's a [Termux script](scripts/try-on-termux.s
 
 ## Status
 
-The core and the checker are done and tested. Next: the Shopify app itself (installing it on a store and receiving orders), then sending records to the AEAT's test environment, which needs a Spanish digital certificate.
+The core and the checker are done and tested. Next: the Shopify app itself (installing it on a store and receiving orders as they happen), then sending records to the AEAT's test environment, which needs a Spanish digital certificate.
 
 This isn't tax advice. Check the current rules with the AEAT or an adviser.
 

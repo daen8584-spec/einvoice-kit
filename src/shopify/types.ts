@@ -42,6 +42,10 @@ export interface ShopifyAddress {
 export interface ShopifyRefundLineItem {
   line_item_id: number;
   quantity: number;
+  /** What Shopify refunded for these units, on the same basis as the price (VAT included when prices include it). */
+  subtotal?: string;
+  /** The VAT Shopify refunded for these units. */
+  total_tax?: string;
 }
 
 export interface ShopifyOrderAdjustment {
