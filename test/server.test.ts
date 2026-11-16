@@ -1,4 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { crc32 } from "node:zlib";
 import { beforeEach, describe, expect, it } from "vitest";
 import live from "./fixtures/live-2026-11-16.json";
 import { buildApp, logSerializers } from "../server/app.js";
@@ -236,6 +237,55 @@ describe("from Shopify notification to invoice", () => {
     await worker.drain();
     const o = await openApp();
     expect(o.documents.map((d: { number: string }) => d.number).sort()).toEqual(["F2026-000001", "R2026-000001"]);
+  });
+});
+
+/** Reads a ZIP's entries and checks each one's checksum. */
+function readZip(zip: Buffer): Map<string, Buffer> {
+  const end = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  const count = zip.readUInt16LE(end + 10);
+  let at = zip.readUInt32LE(end + 16);
+  const files = new Map<string, Buffer>();
+  for (let i = 0; i < count; i++) {
+    expect(zip.readUInt32LE(at)).toBe(0x02014b50);
+    const crc = zip.readUInt32LE(at + 16), size = zip.readUInt32LE(at + 24), nameLen = zip.readUInt16LE(at + 28), local = zip.readUInt32LE(at + 42);
+    const name = zip.subarray(at + 46, at + 46 + nameLen).toString("utf8");
+    const dataAt = local + 30 + zip.readUInt16LE(local + 26) + zip.readUInt16LE(local + 28);
+    const data = zip.subarray(dataAt, dataAt + size);
+    expect(crc32(data), name).toBe(crc);
+    files.set(name, data);
+    at += 46 + nameLen;
+  }
+  return files;
+}
+
+describe("downloading everything", () => {
+  it("gives a ZIP with every invoice as a PDF, a spreadsheet and the Verifactu records", async () => {
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    for (const name of ["#1003", "#1004"]) await webhook(TOPICS.orderPaid, { id: orderId(name) });
+    shopify.refundsVisible.set("#1004", 1);
+    await webhook(TOPICS.refundCreated, { id: refundId("#1004", 0), order_id: orderId("#1004") });
+    await worker.drain();
+
+    const res = await api("GET", "/api/export");
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("application/zip");
+    expect(res.headers["content-disposition"]).toContain("facturas-einvoice-test-es-2026-11-16.zip");
+    const files = readZip(res.rawPayload);
+    expect([...files.keys()].sort()).toEqual(["LEEME.txt", "facturas.csv", "pdf/F2026-000001.pdf", "pdf/F2026-000002.pdf", "pdf/R2026-000001.pdf", "verifactu.json"]);
+    for (const [name, data] of files) if (name.endsWith(".pdf")) expect(data.subarray(0, 5).toString(), name).toBe("%PDF-");
+
+    const csv = files.get("facturas.csv")!.toString("utf8");
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    const lines = csv.slice(1).trim().split("\r\n");
+    expect(lines[0]).toBe("Número;Tipo;Fecha;Fecha de operación;Pedido;Cliente;NIF del cliente;Base;IVA;Total;Moneda;Rectifica");
+    expect(lines).toHaveLength(4);
+    expect(lines.find((l) => l.startsWith("F2026-000001"))).toBe("F2026-000001;F1;2026-11-16;;#1003;Cliente Prueba;89890001K;65,91;13,84;79,75;EUR;");
+    expect(lines.find((l) => l.startsWith("R2026-000001"))).toContain(";-38,21;EUR;F2026-000002");
+
+    const ledger = JSON.parse(files.get("verifactu.json")!.toString("utf8"));
+    expect(await verifyChain(ledger)).toEqual({ ok: true });
   });
 });
 

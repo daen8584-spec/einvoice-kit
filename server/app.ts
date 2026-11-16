@@ -5,6 +5,7 @@ import { validateTaxId } from "../src/es/nif.js";
 import { renderInvoicePdf, type Lang } from "../src/pdf.js";
 import type { ShopSettings } from "../src/shopify/to-invoice.js";
 import { loadSettings, saveSettings } from "./db.js";
+import { exportShop } from "./export.js";
 import { ShopifyClient, ShopifyUnavailable, Unauthorized, verifyIdToken, verifyWebhook } from "./shopify.js";
 import { renderAppPage } from "./ui.js";
 import { COMPLIANCE_TOPICS, TOPICS, Worker } from "./worker.js";
@@ -160,6 +161,16 @@ export function buildApp(o: AppOptions): FastifyInstance {
       o.worker.retryNow(req.shop!);
       await o.worker.drain();
       return { ok: true };
+    });
+
+    // A copy of everything, for the shop to keep: the app doesn't promise to.
+    api.get("/api/export", async (req, reply) => {
+      const zip = await exportShop(o.worker.service(req.shop!).store, new Date(now()));
+      const day = new Date(now()).toISOString().slice(0, 10);
+      return reply
+        .type("application/zip")
+        .header("content-disposition", `attachment; filename="facturas-${req.shop!.replace(".myshopify.com", "")}-${day}.zip"`)
+        .send(zip);
     });
 
     api.get("/api/documents/:key/pdf", async (req, reply) => {

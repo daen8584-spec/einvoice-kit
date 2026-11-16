@@ -82,7 +82,8 @@ ul.issues { margin:6px 0 0; padding-left:18px; }
   </section>
 
   <section class="card">
-    <h2 data-t="docsTitle">Facturas emitidas</h2>
+    <div class="row" style="justify-content:space-between"><h2 data-t="docsTitle">Facturas emitidas</h2><button class="plain" id="export" data-t="export">Descargar todo (ZIP)</button></div>
+    <p class="muted" data-t="keepCopies">Guarda copias de tus facturas fuera de la app: la ley te obliga a conservarlas, y la app no lo garantiza. Si la desinstalas, todo se borra a las 48 horas.</p>
     <p id="empty" class="muted" data-t="empty" hidden>Todavía no hay facturas. Aparecerán aquí cuando se pague un pedido.</p>
     <div class="tablewrap"><table id="docs" hidden>
       <thead><tr><th data-t="number">Número</th><th data-t="date">Fecha</th><th data-t="order">Pedido</th><th data-t="customer">Cliente</th><th class="num" data-t="total">Total</th><th></th></tr></thead>
@@ -100,7 +101,8 @@ const T = {
     someHeld:"Hay pedidos retenidos que necesitan un cambio.", failed:"Algunos avisos de Shopify no se han podido procesar. Lo reintentamos automáticamente.", saved:"Guardado", badTaxId:"Este NIF no es válido.", required:"Obligatorio.",
     error:"No se ha podido cargar. Vuelve a intentarlo.", credit:"Rectificativa",
     access:"Shopify no deja a la app leer estos datos del cliente: {f}. En el Partner Dashboard, abre la app → Solicitudes de acceso a la API → Datos de clientes protegidos, marca esos campos con un motivo, guarda y pulsa Reintentar.",
-    retryAll:"Reintentar ahora", retrying:"Reintentando…", blocked:"Hay pedidos que todavía no se han podido facturar. Mira el aviso de abajo.", pending:"Procesando pedidos recientes…", fields:{ name:"nombre", address1:"dirección", zip:"código postal", city:"ciudad", company:"empresa", firstName:"nombre", lastName:"apellidos", phone:"teléfono", email:"correo" } },
+    retryAll:"Reintentar ahora", retrying:"Reintentando…", export:"Descargar todo (ZIP)", exporting:"Preparando…",
+    keepCopies:"Guarda copias de tus facturas fuera de la app: la ley te obliga a conservarlas, y la app no lo garantiza. Si la desinstalas, todo se borra a las 48 horas.", blocked:"Hay pedidos que todavía no se han podido facturar. Mira el aviso de abajo.", pending:"Procesando pedidos recientes…", fields:{ name:"nombre", address1:"dirección", zip:"código postal", city:"ciudad", company:"empresa", firstName:"nombre", lastName:"apellidos", phone:"teléfono", email:"correo" } },
   en: { title:"Invoices", loading:"Loading…", issued:"Issued", heldCount:"On hold", chain:"Verifactu chain", heldTitle:"On hold: need a change", retry:"Try again",
     heldHelp:"Nothing has been issued for these orders. Fix them in Shopify or complete your details, and they'll go out on their own.", settingsTitle:"Your invoicing details", name:"Company or full name",
     line1:"Address", city:"City", postalCode:"Postal code", timeZone:"Time zone", exemption:"Reason for products without VAT", exemptionHint:"Only if you sell something exempt, for example \\"Exento, art. 20 LIVA\\".",
@@ -109,7 +111,8 @@ const T = {
     someHeld:"Some orders are on hold and need a change.", failed:"Some Shopify notifications couldn't be processed yet. They're retried automatically.", saved:"Saved", badTaxId:"This tax ID isn't valid.", required:"Required.",
     error:"Couldn't load. Try again.", credit:"Credit note",
     access:"Shopify isn't letting the app read these customer details: {f}. In the Partner Dashboard, open the app → API access requests → Protected customer data, tick those fields with a reason, save, and press Try again.",
-    retryAll:"Try again now", retrying:"Trying again…", blocked:"Some orders couldn't be invoiced yet. See the notice below.", pending:"Processing recent orders…", fields:{ name:"name", address1:"address", zip:"postal code", city:"city", company:"company", firstName:"first name", lastName:"last name", phone:"phone", email:"email" } },
+    retryAll:"Try again now", retrying:"Trying again…", export:"Download everything (ZIP)", exporting:"Preparing…",
+    keepCopies:"Keep copies of your invoices outside the app: the law requires you to keep them, and the app doesn't guarantee it. If you uninstall it, everything is deleted after 48 hours.", blocked:"Some orders couldn't be invoiced yet. See the notice below.", pending:"Processing recent orders…", fields:{ name:"name", address1:"address", zip:"postal code", city:"city", company:"company", firstName:"first name", lastName:"last name", phone:"phone", email:"email" } },
 };
 let lang = "es";
 try { if (localStorage.getItem("lang") === "en") lang = "en"; } catch {}
@@ -203,6 +206,17 @@ async function retryAll(btn) {
   try { await fetch("/api/retry", { method:"POST" }); } finally { btn.disabled = false; btn.textContent = label; load(); }
 }
 $("retry").addEventListener("click", (e) => retryAll(e.currentTarget));
+$("export").addEventListener("click", async (e) => {
+  const btn = e.currentTarget; btn.disabled = true; const label = btn.textContent; btn.textContent = t("exporting");
+  try {
+    const res = await fetch("/api/export");
+    if (!res.ok) return;
+    const name = (res.headers.get("content-disposition") || "").match(/filename="([^"]+)"/)?.[1] || "facturas.zip";
+    const url = URL.createObjectURL(await res.blob());
+    const a = Object.assign(document.createElement("a"), { href: url, download: name });
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } finally { btn.disabled = false; btn.textContent = label; }
+});
 $("retry-all").addEventListener("click", (e) => retryAll(e.currentTarget));
 $("lang").addEventListener("change", () => { lang = $("lang").value; try { localStorage.setItem("lang", lang); } catch {} applyLang(); load(); });
 applyLang();
