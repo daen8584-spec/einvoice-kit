@@ -51,9 +51,19 @@ export function share(total: number, quantity: number, from: number, count: numb
   return Math.round((total * (from + count)) / quantity) - Math.round((total * from) / quantity);
 }
 
+/**
+ * "Camiseta (M / Azul)", but just "Cera" when the variant has no name of its own:
+ * Shopify calls a lone variant "Default Title", and some stores repeat the
+ * product name.
+ */
+export function describeItem(title: string, variant: string | null | undefined): string {
+  const v = variant?.trim();
+  return v && v !== "Default Title" && v.toLowerCase() !== title.trim().toLowerCase() ? `${title} (${v})` : title;
+}
+
 function itemLine(item: ShopifyLineItem, exemption: string | undefined): InvoiceLine {
   const line: InvoiceLine = {
-    description: item.variant_title ? `${item.title} (${item.variant_title})` : item.title,
+    description: describeItem(item.title, item.variant_title),
     quantity: item.quantity,
     unitPrice: toCents(item.price),
     rate: rateOf(item.tax_lines),

@@ -5,7 +5,7 @@ import { toCents } from "../src/money.js";
 import { MemorySequenceStore, nextNumber } from "../src/numbering.js";
 import { checkSpanishInvoice } from "../src/es/check.js";
 import { invoiceType } from "../src/es/verifactu.js";
-import { localDate, orderToInvoice, refundToCreditNote, type ShopSettings } from "../src/shopify/to-invoice.js";
+import { describeItem, localDate, orderToInvoice, refundToCreditNote, type ShopSettings } from "../src/shopify/to-invoice.js";
 import type { ShopifyOrder } from "../src/shopify/types.js";
 
 const shop: ShopSettings = { seller: { name: "Tienda Ejemplo SL", taxId: "A28015865", address: { line1: "Gran Vía 1", city: "Madrid", postalCode: "28013", country: "ES" } } };
@@ -59,6 +59,15 @@ describe("Shopify order to invoice", () => {
     const untaxed = { ...o, line_items: [{ ...o.line_items[1]!, tax_lines: [] }], shipping_lines: [] };
     expect(orderToInvoice(untaxed, shop, "X").warnings).toHaveLength(1);
     expect(orderToInvoice(untaxed, { ...shop, exemptionText: "Art. 20 LIVA" }, "X").warnings).toEqual([]);
+  });
+});
+
+describe("product names on invoices", () => {
+  it("adds the variant only when it says something", () => {
+    expect(describeItem("Camiseta", "M / Azul")).toBe("Camiseta (M / Azul)");
+    expect(describeItem("Selling Plans Ski Wax", "Selling Plans Ski Wax")).toBe("Selling Plans Ski Wax");
+    expect(describeItem("Cera", "Default Title")).toBe("Cera");
+    expect(describeItem("Cera", null)).toBe("Cera");
   });
 });
 

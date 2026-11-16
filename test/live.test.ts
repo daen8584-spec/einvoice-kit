@@ -25,7 +25,7 @@ describe("real orders from the Shopify test store", () => {
     expect(out.totals.total).toBe(toCents(raw.totalPriceSet.shopMoney.amount));
     expect(out.totals.tax).toBe(toCents(raw.totalTaxSet!.shopMoney.amount));
     expect(out.issues.filter((i) => i.level === "error")).toEqual([]);
-    expect(invoiceType(out.invoice)).toBe(name === "#1003" ? "F1" : "F2");
+    expect(invoiceType(out.invoice)).toBe(name === "#1003" || name === "#1005" ? "F1" : "F2");
     expect(await verifyChain(app.ledger)).toEqual({ ok: true });
   });
 });
