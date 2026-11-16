@@ -28,6 +28,11 @@ class FakeShopify {
   rejectRefresh = false;
   /** Answer like Shopify does for an app not approved for customer names and addresses. */
   denyFields = false;
+  /** Metafields written by the app, by order, and definitions created. */
+  metafields = new Map<string, string>();
+  definitions = 0;
+  failCopies = false;
+  pinnedFull = false;
   /** How many of each order's refunds Shopify knows about so far. */
   refundsVisible = new Map<string, number>();
 
@@ -56,7 +61,20 @@ class FakeShopify {
         return Response.json({
           errors: ["name", "address1", "zip"].map((f) => ({ message: `This app is not approved to use the ${f} field. See https://shopify.dev/docs/apps/launch/protected-customer-data for more details.` })),
         });
-      const { variables } = JSON.parse(String(init?.body)) as { variables: { id: string } };
+      const request = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, any> };
+      if (request.query.includes("metafieldDefinitionCreate")) {
+        if (this.pinnedFull && request.variables.definition.pin)
+          return Response.json({ data: { metafieldDefinitionCreate: { createdDefinition: null, userErrors: [{ code: "PINNED_LIMIT_REACHED", message: "Limit of 50 pinned definitions" }] } } });
+        this.definitions++;
+        const taken = this.definitions > 1 ? [{ code: "TAKEN", message: "Key is in use" }] : [];
+        return Response.json({ data: { metafieldDefinitionCreate: { createdDefinition: taken.length ? null : { id: "def" }, userErrors: taken } } });
+      }
+      if (request.query.includes("metafieldsSet")) {
+        if (this.failCopies) return new Response("unavailable", { status: 503 });
+        for (const m of request.variables.metafields) this.metafields.set(m.ownerId, m.value);
+        return Response.json({ data: { metafieldsSet: { metafields: [], userErrors: [] } } });
+      }
+      const variables = request.variables as { id: string };
       const order = orders.find((o) => o.id === variables.id);
       if (!order) return Response.json({ data: { order: null } });
       const visible = this.refundsVisible.get(order.name) ?? 0;
@@ -275,6 +293,54 @@ function readZip(zip: Buffer): Map<string, Buffer> {
   return files;
 }
 
+describe("copies in the store's own orders", () => {
+  it("writes each order's invoices into a private field on the order, refunds included", async () => {
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    await webhook(TOPICS.orderPaid, { id: orderId("#1004") });
+    shopify.refundsVisible.set("#1004", 1);
+    await webhook(TOPICS.refundCreated, { id: refundId("#1004", 0), order_id: orderId("#1004") });
+    await worker.drain();
+
+    const value = JSON.parse(shopify.metafields.get(`gid://shopify/Order/${orderId("#1004")}`)!);
+    expect(value.documentos.map((d: { numero: string; total: string }) => [d.numero, d.total])).toEqual([
+      ["F2026-000001", "706.39"],
+      ["R2026-000001", "-38.21"],
+    ]);
+    expect(value.documentos[1].rectifica.numero).toBe("F2026-000001");
+    expect(value.documentos[0].verifactu.huella).toMatch(/^[0-9A-F]{64}$/);
+    expect(shopify.definitions).toBe(1);
+    expect((await openApp()).copies).toEqual({ saved: 2, total: 2, error: null });
+  });
+
+  it("still saves copies in a store that can't pin another field", async () => {
+    shopify.pinnedFull = true;
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    await webhook(TOPICS.orderPaid, { id: orderId("#1003") });
+    await worker.drain();
+    expect(shopify.definitions).toBe(1);
+    expect((await openApp()).copies).toEqual({ saved: 1, total: 1, error: null });
+  });
+
+  it("keeps invoicing when copies can't be saved, and saves them later", async () => {
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    shopify.failCopies = true;
+    await webhook(TOPICS.orderPaid, { id: orderId("#1003") });
+    await worker.drain();
+    let o = await openApp();
+    expect(o.issued).toBe(1);
+    expect(o.copies.saved).toBe(0);
+    expect(o.copies.error).toContain("503");
+
+    shopify.failCopies = false;
+    await worker.drain();
+    o = await openApp();
+    expect(o.copies).toEqual({ saved: 1, total: 1, error: null });
+  });
+});
+
 describe("downloading everything", () => {
   it("gives a ZIP with every invoice as a PDF, a spreadsheet and the Verifactu records", async () => {
     await openApp();
@@ -345,7 +411,7 @@ describe("what the app keeps", () => {
 
     await webhook("shop/redact", { shop_domain: SHOP });
     await worker.drain();
-    for (const table of ["documents", "ledger", "series", "held", "skipped", "waiting_refunds", "settings", "agreements", "shops"]) {
+    for (const table of ["documents", "ledger", "series", "held", "skipped", "waiting_refunds", "settings", "agreements", "copies", "copy_errors", "shops"]) {
       const n = db.prepare(`select count(*) as n from ${table} where shop = ?`).get(SHOP) as { n: number };
       expect(n.n, table).toBe(0);
     }

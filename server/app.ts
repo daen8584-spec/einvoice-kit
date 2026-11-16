@@ -125,6 +125,7 @@ export function buildApp(o: AppOptions): FastifyInstance {
         })),
         pendingEvents: Number(waiting.n),
         missingAccess: o.worker.missingAccess(shop),
+        copies: o.worker.copyStatus(shop),
         failedEvents: Number(failed.n),
         chain: await verifyChain(service.store.ledger()),
       };

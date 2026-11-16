@@ -14,8 +14,9 @@ automatically_update_urls_on_dev = true
 redirect_urls = ["https://REPLACE_WITH_APP_HOST/auth/callback"]
 
 [access_scopes]
-# Orders, refunds and the customer's billing details are all the app reads.
-scopes = "read_orders"
+# The app reads orders, refunds and the customer's billing details, and writes
+# only one thing: a copy of each order's invoices into a field on that order.
+scopes = "read_orders,write_orders"
 
 [webhooks]
 api_version = "2026-10"

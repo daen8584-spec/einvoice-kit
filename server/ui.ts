@@ -53,11 +53,13 @@ ul.issues { margin:6px 0 0; padding-left:18px; }
   </header>
   <div id="status" class="banner warn" data-t="loading">Cargando…</div>
   <div id="access" class="banner err" hidden></div>
+  <div id="copy-error" class="banner warn" hidden></div>
 
   <section class="card stats" aria-label="Resumen">
     <div class="stat"><span class="muted" data-t="issued">Emitidas</span><b id="n-issued">–</b></div>
     <div class="stat"><span class="muted" data-t="heldCount">Retenidas</span><b id="n-held">–</b></div>
     <div class="stat"><span class="muted" data-t="chain">Cadena Verifactu</span><b id="chain">–</b></div>
+    <div class="stat"><span class="muted" data-t="copiesStat">Copias en tus pedidos</span><b id="copies">–</b></div>
     <div class="stat"><button class="plain" id="retry-all" data-t="retryAll">Reintentar ahora</button></div>
   </section>
 
@@ -87,7 +89,7 @@ ul.issues { margin:6px 0 0; padding-left:18px; }
 
   <section class="card">
     <div class="row" style="justify-content:space-between"><h2 data-t="docsTitle">Facturas emitidas</h2><button class="plain" id="export" data-t="export">Descargar todo (ZIP)</button></div>
-    <p class="muted" data-t="keepCopies">Guarda copias de tus facturas fuera de la app: la ley te obliga a conservarlas, y la app no lo garantiza. Si la desinstalas, todo se borra a las 48 horas.</p>
+    <p class="muted" data-t="keepCopies">Cada factura se copia en su pedido de Shopify (campo «Facturas (einvoice-kit)»), que es tuyo y se queda aunque desinstales la app. Aun así, descarga copias de vez en cuando: la ley te obliga a conservarlas.</p>
     <p id="empty" class="muted" data-t="empty" hidden>Todavía no hay facturas. Aparecerán aquí cuando se pague un pedido.</p>
     <div class="tablewrap"><table id="docs" hidden>
       <thead><tr><th data-t="number">Número</th><th data-t="date">Fecha</th><th data-t="order">Pedido</th><th data-t="customer">Cliente</th><th class="num" data-t="total">Total</th><th></th></tr></thead>
@@ -107,8 +109,9 @@ const T = {
     error:"No se ha podido cargar. Vuelve a intentarlo.", credit:"Rectificativa",
     access:"Shopify no deja a la app leer estos datos del cliente: {f}. En el Partner Dashboard, abre la app → Solicitudes de acceso a la API → Datos de clientes protegidos, marca esos campos con un motivo, guarda y pulsa Reintentar.",
     retryAll:"Reintentar ahora", retrying:"Reintentando…", export:"Descargar todo (ZIP)", exporting:"Preparando…",
+    copiesStat:"Copias en tus pedidos", copyError:"Todavía no se han podido guardar algunas copias en tus pedidos de Shopify. Se reintenta solo; si sigue, pulsa Reintentar ahora. Motivo: {e}",
     terms:"Acepto los {t} y el {d}.", termsLink:"términos de uso", dpaLink:"acuerdo de encargo del tratamiento", needTerms:"Para empezar, acepta los términos.", privacy:"Política de privacidad", termsFooter:"Términos de uso",
-    keepCopies:"Guarda copias de tus facturas fuera de la app: la ley te obliga a conservarlas, y la app no lo garantiza. Si la desinstalas, todo se borra a las 48 horas.", blocked:"Hay pedidos que todavía no se han podido facturar. Mira el aviso de abajo.", pending:"Procesando pedidos recientes…", fields:{ name:"nombre", address1:"dirección", zip:"código postal", city:"ciudad", company:"empresa", firstName:"nombre", lastName:"apellidos", phone:"teléfono", email:"correo" } },
+    keepCopies:"Cada factura se copia en su pedido de Shopify (campo «Facturas (einvoice-kit)»), que es tuyo y se queda aunque desinstales la app. Aun así, descarga copias de vez en cuando: la ley te obliga a conservarlas.", blocked:"Hay pedidos que todavía no se han podido facturar. Mira el aviso de abajo.", pending:"Procesando pedidos recientes…", fields:{ name:"nombre", address1:"dirección", zip:"código postal", city:"ciudad", company:"empresa", firstName:"nombre", lastName:"apellidos", phone:"teléfono", email:"correo" } },
   en: { title:"Invoices", loading:"Loading…", issued:"Issued", heldCount:"On hold", chain:"Verifactu chain", heldTitle:"On hold: need a change", retry:"Try again",
     heldHelp:"Nothing has been issued for these orders. Fix them in Shopify or complete your details, and they'll go out on their own.", settingsTitle:"Your invoicing details", name:"Company or full name",
     line1:"Address", city:"City", postalCode:"Postal code", timeZone:"Time zone", exemption:"Reason for products without VAT", exemptionHint:"Only if you sell something exempt, for example \\"Exento, art. 20 LIVA\\".",
@@ -118,8 +121,9 @@ const T = {
     error:"Couldn't load. Try again.", credit:"Credit note",
     access:"Shopify isn't letting the app read these customer details: {f}. In the Partner Dashboard, open the app → API access requests → Protected customer data, tick those fields with a reason, save, and press Try again.",
     retryAll:"Try again now", retrying:"Trying again…", export:"Download everything (ZIP)", exporting:"Preparing…",
+    copiesStat:"Copies in your orders", copyError:"Some copies couldn't be saved to your Shopify orders yet. It's retried automatically; if it persists, press Try again now. Reason: {e}",
     terms:"I accept the {t} and the {d}.", termsLink:"terms of use", dpaLink:"data processing agreement", needTerms:"To start, accept the terms.", privacy:"Privacy policy", termsFooter:"Terms of use",
-    keepCopies:"Keep copies of your invoices outside the app: the law requires you to keep them, and the app doesn't guarantee it. If you uninstall it, everything is deleted after 48 hours.", blocked:"Some orders couldn't be invoiced yet. See the notice below.", pending:"Processing recent orders…", fields:{ name:"name", address1:"address", zip:"postal code", city:"city", company:"company", firstName:"first name", lastName:"last name", phone:"phone", email:"email" } },
+    keepCopies:"Each invoice is copied into its Shopify order (the \"Facturas (einvoice-kit)\" field), which is yours and stays even if you uninstall the app. Still, download copies now and then: the law requires you to keep them.", blocked:"Some orders couldn't be invoiced yet. See the notice below.", pending:"Processing recent orders…", fields:{ name:"name", address1:"address", zip:"postal code", city:"city", company:"company", firstName:"first name", lastName:"last name", phone:"phone", email:"email" } },
 };
 let lang = "es";
 try { if (localStorage.getItem("lang") === "en") lang = "en"; } catch {}
@@ -150,6 +154,10 @@ function render() {
   else if (d.pendingEvents) { s.className = "banner warn"; s.textContent = t("pending"); }
   else { s.className = "banner ok"; s.textContent = t("allGood"); }
 
+  const c = d.copies || { saved: 0, total: 0, error: null };
+  $("copies").textContent = c.saved + " / " + c.total;
+  $("copy-error").hidden = !c.error || c.saved === c.total;
+  if (c.error) $("copy-error").textContent = t("copyError").replace("{e}", c.error.startsWith("access:") ? "permiso de Shopify" : c.error);
   const missing = d.missingAccess || [];
   $("access").hidden = missing.length === 0;
   if (missing.length) $("access").textContent = t("access").replace("{f}", missing.map((f) => T[lang].fields[f] || f).join(", "));

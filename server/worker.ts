@@ -4,6 +4,7 @@ import { fromGraphQL } from "../src/shopify/from-graphql.js";
 import { pack, unpack, type Cipher } from "../src/crypto.js";
 import { SqliteStore } from "../src/sqlite-store.js";
 import { loadSettings, UNCONFIGURED } from "./db.js";
+import { saveCopies } from "./copies.js";
 import { AccessDenied, ShopifyUnavailable, type ShopifyClient } from "./shopify.js";
 
 export const TOPICS = {
@@ -85,11 +86,42 @@ export class Worker {
         const byShop = new Map<string, InboxRow[]>();
         for (const row of due) byShop.set(row.shop, [...(byShop.get(row.shop) ?? []), row]);
         await Promise.all([...byShop.values()].map((rows) => this.runShop(rows)));
+        await this.copyAll();
       } while (this.again);
     })().finally(() => {
       this.draining = null;
     });
     return this.draining;
+  }
+
+  /**
+   * Copies new documents into each installed shop's own Shopify orders. A copy
+   * that can't be saved now is tried on the next pass; invoicing never waits for it.
+   */
+  private async copyAll(): Promise<void> {
+    const shops = this.db
+      .prepare(
+        `select distinct d.shop from documents d join shops s on s.shop = d.shop and s.access_token is not null
+         where not exists (select 1 from copies c where c.shop = d.shop and c.key = d.key)`,
+      )
+      .all() as { shop: string }[];
+    for (const { shop } of shops) {
+      try {
+        await saveCopies(this.db, this.shopify, shop, this.service(shop).store.allDocuments());
+        this.db.prepare("delete from copy_errors where shop = ?").run(shop);
+      } catch (error) {
+        this.db.prepare("insert or replace into copy_errors (shop, error, at) values (?, ?, ?)").run(shop, describe(error), new Date(this.now()).toISOString());
+        this.log(`${shop} copies: ${String(error)}`);
+      }
+    }
+  }
+
+  /** How many documents are copied into the shop's orders, and why the rest aren't yet. */
+  copyStatus(shop: string): { saved: number; total: number; error: string | null } {
+    const saved = this.db.prepare("select count(*) as n from copies c join documents d on d.shop = c.shop and d.key = c.key where c.shop = ?").get(shop) as { n: number };
+    const total = this.db.prepare("select count(*) as n from documents where shop = ?").get(shop) as { n: number };
+    const err = this.db.prepare("select error from copy_errors where shop = ?").get(shop) as { error: string } | undefined;
+    return { saved: Number(saved.n), total: Number(total.n), error: err?.error ?? null };
   }
 
   private async runShop(rows: InboxRow[]): Promise<void> {
@@ -192,7 +224,7 @@ export class Worker {
 export function deleteShop(db: Database, shop: string): void {
   db.exec("begin immediate");
   try {
-    for (const table of ["documents", "ledger", "series", "held", "skipped", "waiting_refunds", "settings", "agreements", "shops", "inbox"])
+    for (const table of ["documents", "ledger", "series", "held", "skipped", "waiting_refunds", "settings", "agreements", "copies", "copy_errors", "shops", "inbox"])
       db.prepare(`delete from ${table} where shop = ?`).run(shop);
     db.exec("commit");
   } catch (error) {
