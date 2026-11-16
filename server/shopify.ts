@@ -88,6 +88,13 @@ export class TokenCipher {
 }
 
 export class ShopifyUnavailable extends Error {}
+
+/** Shopify refused fields the app isn't approved for, such as customer names and addresses. */
+export class AccessDenied extends Error {
+  constructor(readonly fields: string[]) {
+    super(`not approved for protected customer fields: ${fields.join(", ")}`);
+  }
+}
 export class ReauthorizeNeeded extends Error {}
 
 interface TokenResponse {
@@ -229,6 +236,8 @@ export class ShopifyClient {
     const body = (await res.json()) as { data?: T; errors?: { message: string; extensions?: { code?: string } }[] };
     if (body.errors?.length) {
       if (body.errors.some((e) => e.extensions?.code === "THROTTLED")) throw new ShopifyUnavailable("throttled");
+      const denied = body.errors.map((e) => /not approved to use the (\w+) field/.exec(e.message)?.[1]).filter((f): f is string => Boolean(f));
+      if (denied.length) throw new AccessDenied([...new Set(denied)]);
       throw new Error(`GraphQL error: ${body.errors.map((e) => e.message).join("; ")}`);
     }
     return body.data as T;

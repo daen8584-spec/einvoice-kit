@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import live from "./fixtures/live-2026-11-16.json";
-import { buildApp } from "../server/app.js";
+import { buildApp, logSerializers } from "../server/app.js";
 import { openAppDatabase } from "../server/db.js";
 import { ShopifyClient, signIdToken, TokenCipher } from "../server/shopify.js";
 import { TOPICS, Worker } from "../server/worker.js";
@@ -24,6 +24,8 @@ class FakeShopify {
   graphqlCalls = 0;
   down = false;
   rejectRefresh = false;
+  /** Answer like Shopify does for an app not approved for customer names and addresses. */
+  denyFields = false;
   /** How many of each order's refunds Shopify knows about so far. */
   refundsVisible = new Map<string, number>();
 
@@ -48,6 +50,10 @@ class FakeShopify {
       const headers = new Headers(init?.headers);
       if (headers.get("x-shopify-access-token") !== this.accessToken) return new Response("{}", { status: 401 });
       this.graphqlCalls++;
+      if (this.denyFields)
+        return Response.json({
+          errors: ["name", "address1", "zip"].map((f) => ({ message: `This app is not approved to use the ${f} field. See https://shopify.dev/docs/apps/launch/protected-customer-data for more details.` })),
+        });
       const { variables } = JSON.parse(String(init?.body)) as { variables: { id: string } };
       const order = orders.find((o) => o.id === variables.id);
       if (!order) return Response.json({ data: { order: null } });
@@ -233,6 +239,30 @@ describe("from Shopify notification to invoice", () => {
 });
 
 describe("when things go wrong", () => {
+  it("says which customer details Shopify refused, and issues the invoice right after the fix", async () => {
+    // What happened on the first run on a real store: name and address fields not approved yet.
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    shopify.denyFields = true;
+    await webhook(TOPICS.orderPaid, { id: orderId("#1003") });
+    await worker.drain();
+    let o = await openApp();
+    expect(o.issued).toBe(0);
+    expect(o.missingAccess).toEqual(["name", "address1", "zip"]);
+
+    // The merchant approves the fields and presses "Try again": no waiting for the next retry.
+    shopify.denyFields = false;
+    expect((await api("POST", "/api/retry")).statusCode).toBe(200);
+    await worker.drain();
+    o = await openApp();
+    expect(o.issued).toBe(1);
+    expect(o.missingAccess).toEqual([]);
+  });
+
+  it("keeps ID tokens and signatures out of the request log", () => {
+    expect(logSerializers.req({ method: "GET", url: "/?embedded=1&id_token=eyJ.secret.sig&hmac=abc&shop=x.myshopify.com" })).toEqual({ method: "GET", url: "/" });
+  });
+
   it("retries later when Shopify is down, and loses nothing", async () => {
     await openApp();
     await api("PUT", "/api/settings", settings);

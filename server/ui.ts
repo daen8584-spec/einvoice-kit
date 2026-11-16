@@ -52,11 +52,13 @@ ul.issues { margin:6px 0 0; padding-left:18px; }
     </div>
   </header>
   <div id="status" class="banner warn" data-t="loading">Cargando…</div>
+  <div id="access" class="banner err" hidden></div>
 
   <section class="card stats" aria-label="Resumen">
     <div class="stat"><span class="muted" data-t="issued">Emitidas</span><b id="n-issued">–</b></div>
     <div class="stat"><span class="muted" data-t="heldCount">Retenidas</span><b id="n-held">–</b></div>
     <div class="stat"><span class="muted" data-t="chain">Cadena Verifactu</span><b id="chain">–</b></div>
+    <div class="stat"><button class="plain" id="retry-all" data-t="retryAll">Reintentar ahora</button></div>
   </section>
 
   <section class="card" id="held-card" hidden>
@@ -96,14 +98,18 @@ const T = {
     save:"Guardar", docsTitle:"Facturas emitidas", empty:"Todavía no hay facturas. Aparecerán aquí cuando se pague un pedido.", number:"Número", date:"Fecha", order:"Pedido", customer:"Cliente", total:"Total",
     pdf:"PDF", ok:"Correcta", broken:"Revisar", needSettings:"Completa tus datos de facturación para empezar a emitir facturas.", allGood:"Todo en orden. Las facturas se emiten solas al pagarse cada pedido.",
     someHeld:"Hay pedidos retenidos que necesitan un cambio.", failed:"Algunos avisos de Shopify no se han podido procesar. Lo reintentamos automáticamente.", saved:"Guardado", badTaxId:"Este NIF no es válido.", required:"Obligatorio.",
-    error:"No se ha podido cargar. Vuelve a intentarlo.", credit:"Rectificativa" },
+    error:"No se ha podido cargar. Vuelve a intentarlo.", credit:"Rectificativa",
+    access:"Shopify no deja a la app leer estos datos del cliente: {f}. En el Partner Dashboard, abre la app → Solicitudes de acceso a la API → Datos de clientes protegidos, marca esos campos con un motivo, guarda y pulsa Reintentar.",
+    retryAll:"Reintentar ahora", retrying:"Reintentando…", blocked:"Hay pedidos que todavía no se han podido facturar. Mira el aviso de abajo.", pending:"Procesando pedidos recientes…", fields:{ name:"nombre", address1:"dirección", zip:"código postal", city:"ciudad", company:"empresa", firstName:"nombre", lastName:"apellidos", phone:"teléfono", email:"correo" } },
   en: { title:"Invoices", loading:"Loading…", issued:"Issued", heldCount:"On hold", chain:"Verifactu chain", heldTitle:"On hold: need a change", retry:"Try again",
     heldHelp:"Nothing has been issued for these orders. Fix them in Shopify or complete your details, and they'll go out on their own.", settingsTitle:"Your invoicing details", name:"Company or full name",
     line1:"Address", city:"City", postalCode:"Postal code", timeZone:"Time zone", exemption:"Reason for products without VAT", exemptionHint:"Only if you sell something exempt, for example \\"Exento, art. 20 LIVA\\".",
     save:"Save", docsTitle:"Issued invoices", empty:"No invoices yet. They'll appear here when an order is paid.", number:"Number", date:"Date", order:"Order", customer:"Customer", total:"Total",
     pdf:"PDF", ok:"Intact", broken:"Check", needSettings:"Complete your invoicing details to start issuing invoices.", allGood:"All in order. Invoices go out on their own when each order is paid.",
     someHeld:"Some orders are on hold and need a change.", failed:"Some Shopify notifications couldn't be processed yet. They're retried automatically.", saved:"Saved", badTaxId:"This tax ID isn't valid.", required:"Required.",
-    error:"Couldn't load. Try again.", credit:"Credit note" },
+    error:"Couldn't load. Try again.", credit:"Credit note",
+    access:"Shopify isn't letting the app read these customer details: {f}. In the Partner Dashboard, open the app → API access requests → Protected customer data, tick those fields with a reason, save, and press Try again.",
+    retryAll:"Try again now", retrying:"Trying again…", blocked:"Some orders couldn't be invoiced yet. See the notice below.", pending:"Processing recent orders…", fields:{ name:"name", address1:"address", zip:"postal code", city:"city", company:"company", firstName:"first name", lastName:"last name", phone:"phone", email:"email" } },
 };
 let lang = "es";
 try { if (localStorage.getItem("lang") === "en") lang = "en"; } catch {}
@@ -128,10 +134,15 @@ function render() {
   const s = $("status");
   if (!d.settings) { s.className = "banner warn"; s.textContent = t("needSettings"); }
   else if (!d.chain.ok) { s.className = "banner err"; s.textContent = t("broken"); }
+  else if ((d.missingAccess || []).length) { s.className = "banner err"; s.textContent = t("blocked"); }
   else if (d.held.length) { s.className = "banner warn"; s.textContent = t("someHeld"); }
   else if (d.failedEvents) { s.className = "banner warn"; s.textContent = t("failed"); }
+  else if (d.pendingEvents) { s.className = "banner warn"; s.textContent = t("pending"); }
   else { s.className = "banner ok"; s.textContent = t("allGood"); }
 
+  const missing = d.missingAccess || [];
+  $("access").hidden = missing.length === 0;
+  if (missing.length) $("access").textContent = t("access").replace("{f}", missing.map((f) => T[lang].fields[f] || f).join(", "));
   $("held-card").hidden = d.held.length === 0;
   $("held").replaceChildren(...d.held.map((h) => {
     const div = document.createElement("div"); div.className = "held";
@@ -187,7 +198,12 @@ $("settings").addEventListener("submit", async (e) => {
   }
   if (res.ok) { $("saved").textContent = t("saved"); setTimeout(load, 1500); }
 });
-$("retry").addEventListener("click", async () => { await fetch("/api/retry", { method:"POST" }); load(); });
+async function retryAll(btn) {
+  btn.disabled = true; const label = btn.textContent; btn.textContent = t("retrying");
+  try { await fetch("/api/retry", { method:"POST" }); } finally { btn.disabled = false; btn.textContent = label; load(); }
+}
+$("retry").addEventListener("click", (e) => retryAll(e.currentTarget));
+$("retry-all").addEventListener("click", (e) => retryAll(e.currentTarget));
 $("lang").addEventListener("change", () => { lang = $("lang").value; try { localStorage.setItem("lang", lang); } catch {} applyLang(); load(); });
 applyLang();
 load();
