@@ -44,11 +44,11 @@ A simulation can only be as right as its idea of how Shopify behaves, so the cod
 
 Every invoice matched Shopify's total and VAT to the cent, and the €3,799.80 order was held. The refunds found something the simulation couldn't: when a refund lands on half a cent, Shopify rounds the first refund down, and my own split rounded it up, so one credit note came out a cent higher than what the customer got back. Credit notes now use the exact amount and VAT Shopify reports for each refunded item, and the test checks every one against Shopify's figures.
 
-To make sure the simulation isn't just passing, [`scripts/mutations.py`](scripts/mutations.py) breaks the app on purpose in twelve different ways (wrong rounding, UTC dates, wrong hash order, duplicate handling removed...) and checks the simulation or the real-store test catches each one. They catch all twelve. CI runs both on every change.
+To make sure the simulation isn't just passing, [`scripts/mutations.py`](scripts/mutations.py) breaks the app on purpose in thirteen different ways (wrong rounding, UTC dates, wrong hash order, duplicate handling removed...) and checks the simulation or the real-store test catches each one. They catch all thirteen. CI runs both on every change.
 
 ```bash
 npm run simulate -- 100000      # 100,000 orders, about 3 minutes (add --sqlite to use the database)
-npm run mutations               # the twelve deliberate bugs
+npm run mutations               # the thirteen deliberate bugs
 ```
 
 No amount of testing makes software perfect. What this gives is a lot of evidence, a clear list of what's checked, and a design that stops rather than issues anything it isn't sure about.
@@ -69,7 +69,7 @@ Requires Node 20 or later.
 
 ```bash
 npm install
-npm test          # 83 tests, including the store simulation, real Shopify orders and the app end to end
+npm test          # 89 tests, including the store simulation, real Shopify orders and the app end to end
 npm run dev       # the checker at http://localhost:5173
 ```
 
@@ -92,6 +92,12 @@ npm run build:server
 SHOPIFY_API_KEY=... SHOPIFY_API_SECRET=... TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32) npm start
 ```
 
+### Running on a real store
+
+The app has run end to end on a Shopify development store, from a phone: a paid order with a discount and a customer tax ID became a full invoice, and a partial refund became a credit note, each issued by the app on its own from Shopify's webhooks. Both match Shopify to the cent, including a refund of exactly half a cent (Shopify's €22.45 rather than €22.46), and both are in the real-store test.
+
+That first run also found things no test had: Shopify refusing customer names and addresses until the app was approved for them, which the admin page now explains, and a correction arriving at the same moment as another notification for the same order, which the app used to drop.
+
 ### Running it from a phone
 
 No server needed for testing: [`scripts/run-on-phone.sh`](scripts/run-on-phone.sh) runs the app on an Android phone with Termux. A free Cloudflare quick tunnel gives the phone a public address, and Shopify CLI points the app and its webhooks at that address each time it starts. The first run also connects the app to a Shopify account. The app only works while the script is running; Shopify retries anything it couldn't deliver in the meantime.
@@ -107,7 +113,7 @@ Still to do before the App Store:
 - Approval from Shopify to read customer names and addresses (protected customer data)
 - Deciding, with legal advice, how long to keep invoices after a shop uninstalls: Spanish law requires keeping them for years, while Shopify asks apps to delete shop data
 - Moving the admin page to Polaris web components
-- Testing an order with shipping on a real store
+- Testing an order with shipping on a real store (the test store won't ship to Spain yet)
 
 This isn't tax advice. Check the current rules with the AEAT or an adviser.
 

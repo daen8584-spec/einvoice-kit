@@ -1,5 +1,5 @@
 {
- "source": "Read from the einvoice-test-es development store through the Shopify Admin GraphQL API (2026-10) on 2026-11-16. Prices include 21% Spanish VAT, calculated by Shopify. Refunds were made in the Shopify admin the same day.",
+ "source": "Read from the einvoice-test-es development store through the Shopify Admin GraphQL API (2026-10) on 2026-11-16. Prices include 21% Spanish VAT, calculated by Shopify. Refunds were made in the Shopify admin the same day. #1005 and its refund were the first order and refund handled by the running app; its line item and refund IDs are stand-ins, the amounts are Shopify's.",
  "orders": [
   {
    "id": "gid://shopify/Order/19029732327648",
@@ -437,6 +437,138 @@
         "totalTaxSet": {
          "shopMoney": {
           "amount": "6.63"
+         }
+        }
+       }
+      ]
+     },
+     "orderAdjustments": {
+      "nodes": []
+     }
+    }
+   ]
+  },
+  {
+   "id": "gid://shopify/Order/19029936832736",
+   "legacyResourceId": "19029936832736",
+   "name": "#1005",
+   "createdAt": "2026-11-16T17:29:47Z",
+   "processedAt": "2026-11-16T17:29:47Z",
+   "currencyCode": "EUR",
+   "taxesIncluded": true,
+   "totalPriceSet": {
+    "shopMoney": {
+     "amount": "53.87"
+    }
+   },
+   "totalTaxSet": {
+    "shopMoney": {
+     "amount": "9.35"
+    }
+   },
+   "customAttributes": [
+    {
+     "key": "NIF",
+     "value": "89890001K"
+    }
+   ],
+   "billingAddress": {
+    "name": "Cliente Prueba",
+    "company": null,
+    "address1": "Calle Mayor 1",
+    "city": "Madrid",
+    "zip": "28013",
+    "countryCodeV2": "ES"
+   },
+   "lineItems": {
+    "nodes": [
+     {
+      "id": "gid://shopify/LineItem/50995000000001",
+      "title": "Selling Plans Ski Wax",
+      "variantTitle": "Selling Plans Ski Wax",
+      "quantity": 2,
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "24.95"
+       }
+      },
+      "discountAllocations": [
+       {
+        "allocatedAmountSet": {
+         "shopMoney": {
+          "amount": "4.99"
+         }
+        }
+       }
+      ],
+      "taxLines": [
+       {
+        "title": "ES IVA",
+        "rate": 0.21,
+        "priceSet": {
+         "shopMoney": {
+          "amount": "7.79"
+         }
+        }
+       }
+      ]
+     },
+     {
+      "id": "gid://shopify/LineItem/50995000000002",
+      "title": "Selling Plans Ski Wax",
+      "variantTitle": "Sample Selling Plans Ski Wax",
+      "quantity": 1,
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "9.95"
+       }
+      },
+      "discountAllocations": [
+       {
+        "allocatedAmountSet": {
+         "shopMoney": {
+          "amount": "0.99"
+         }
+        }
+       }
+      ],
+      "taxLines": [
+       {
+        "title": "ES IVA",
+        "rate": 0.21,
+        "priceSet": {
+         "shopMoney": {
+          "amount": "1.56"
+         }
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "shippingLines": {
+    "nodes": []
+   },
+   "refunds": [
+    {
+     "legacyResourceId": "1118850000001",
+     "createdAt": "2026-11-16T18:24:06Z",
+     "note": "",
+     "refundLineItems": {
+      "nodes": [
+       {
+        "quantity": 1,
+        "lineItem": {
+         "id": "gid://shopify/LineItem/50995000000001"
+        },
+        "subtotalSet": {
+         "shopMoney": {
+          "amount": "22.45"
+         }
+        },
+        "totalTaxSet": {
+         "shopMoney": {
+          "amount": "3.89"
          }
         }
        }
