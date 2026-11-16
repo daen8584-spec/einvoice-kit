@@ -3,7 +3,7 @@ import { InvoiceService } from "../src/app.js";
 import { fromGraphQL } from "../src/shopify/from-graphql.js";
 import { SqliteStore } from "../src/sqlite-store.js";
 import { loadSettings, UNCONFIGURED } from "./db.js";
-import { ShopifyUnavailable, type ShopifyClient } from "./shopify.js";
+import { AccessDenied, ShopifyUnavailable, type ShopifyClient } from "./shopify.js";
 
 export const TOPICS = {
   orderPaid: "orders/paid",
@@ -16,6 +16,12 @@ export const TOPICS = {
 export const COMPLIANCE_TOPICS = ["customers/data_request", "customers/redact", "shop/redact"];
 
 const MAX_ATTEMPTS = 12;
+
+/** Stored with the event; permission problems get a prefix the admin page can recognise. */
+function describe(error: unknown): string {
+  if (error instanceof AccessDenied) return `access:${error.fields.join(",")}`;
+  return String(error instanceof Error ? error.message : error);
+}
 const backoff = (attempts: number) => Math.min(60 * 60_000, 30_000 * 2 ** (attempts - 1));
 
 interface InboxRow {
@@ -50,6 +56,17 @@ export class Worker {
     return r.changes > 0;
   }
 
+  /** Makes everything waiting for a shop due now, including events that gave up, after the merchant fixed something. */
+  retryNow(shop: string): void {
+    this.db.prepare("update inbox set status = 'pending', next_attempt_at = 0 where shop = ? and status in ('pending', 'failed')").run(shop);
+  }
+
+  /** Why this shop's events are stuck, if Shopify refused the app access to some fields. */
+  missingAccess(shop: string): string[] {
+    const rows = this.db.prepare("select last_error from inbox where shop = ? and status in ('pending', 'failed') and last_error like 'access:%'").all(shop) as { last_error: string }[];
+    return [...new Set(rows.flatMap((r) => r.last_error.slice("access:".length).split(",")).filter(Boolean))];
+  }
+
   /** Processes everything that's due. Safe to call often; runs one pass at a time. */
   drain(): Promise<void> {
     if (this.draining) {
@@ -82,7 +99,7 @@ export class Worker {
         const giveUp = attempts >= MAX_ATTEMPTS && !(error instanceof ShopifyUnavailable);
         this.db
           .prepare("update inbox set attempts = ?, next_attempt_at = ?, last_error = ?, status = ? where webhook_id = ?")
-          .run(attempts, this.now() + backoff(attempts), String(error instanceof Error ? error.message : error), giveUp ? "failed" : "pending", row.webhook_id);
+          .run(attempts, this.now() + backoff(attempts), describe(error), giveUp ? "failed" : "pending", row.webhook_id);
         this.log(`${row.shop} ${row.topic} ${row.webhook_id}: ${String(error)}`);
         // Later events carry on: the invoicing handles events in any order, and
         // one stuck event must not stop a shop's invoicing.

@@ -27,8 +27,16 @@ declare module "fastify" {
   }
 }
 
+/**
+ * Request logs without query strings: Shopify puts a short-lived ID token and an
+ * HMAC in the admin page's address, and neither belongs in a log.
+ */
+export const logSerializers = {
+  req: (req: { method: string; url: string }) => ({ method: req.method, url: req.url.split("?")[0] ?? "" }),
+};
+
 export function buildApp(o: AppOptions): FastifyInstance {
-  const app = Fastify({ logger: o.logger ?? false, bodyLimit: 2 * 1024 * 1024 });
+  const app = Fastify({ logger: o.logger ? { serializers: logSerializers } : false, bodyLimit: 2 * 1024 * 1024 });
   const now = o.now ?? Date.now;
 
   app.get("/health", async () => ({ ok: true }));
@@ -114,6 +122,7 @@ export function buildApp(o: AppOptions): FastifyInstance {
           issues: h.issues.filter((i) => i.level === "error").map((i) => i[lang]),
         })),
         pendingEvents: Number(waiting.n),
+        missingAccess: o.worker.missingAccess(shop),
         failedEvents: Number(failed.n),
         chain: await verifyChain(service.store.ledger()),
       };
@@ -140,12 +149,15 @@ export function buildApp(o: AppOptions): FastifyInstance {
       saveSettings(o.db, shop, settings);
       // Invoices held for missing details can go out now.
       o.worker.enqueue(`retry:${shop}:${now()}`, shop, TOPICS.retryHeld, "{}");
+      o.worker.retryNow(shop);
       void o.worker.drain();
       return { settings };
     });
 
+    // After the merchant fixes something: try held invoices and waiting notifications now.
     api.post("/api/retry", async (req) => {
       o.worker.enqueue(`retry:${req.shop}:${now()}`, req.shop!, TOPICS.retryHeld, "{}");
+      o.worker.retryNow(req.shop!);
       await o.worker.drain();
       return { ok: true };
     });
