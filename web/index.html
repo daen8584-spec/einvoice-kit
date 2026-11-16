@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comprobador de facturas Verifactu</title>
+<meta name="description" content="Comprueba gratis si tu factura cumple los requisitos básicos en España y Verifactu. Todo se hace en tu navegador.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-row">
+    <div class="brand"><span class="mark" aria-hidden="true">✓</span> <span data-i18n="brand">Comprobador de facturas</span></div>
+    <div class="lang" role="group" aria-label="Idioma / Language">
+      <button type="button" data-lang="es" aria-pressed="true">ES</button>
+      <button type="button" data-lang="en" aria-pressed="false">EN</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="intro">
+    <h1 data-i18n="title">¿Tu factura cumple en España?</h1>
+    <p data-i18n="lede">Escribe los datos de una factura y te diremos qué falta o qué está mal: el NIF, el IVA, los totales, y si es completa o simplificada. También verás cómo quedaría con el código QR de Verifactu.</p>
+    <p class="privacy" data-i18n="privacy">Todo se comprueba en tu navegador. Tus datos no se envían a ningún sitio.</p>
+  </section>
+
+  <div class="grid">
+    <form id="form" class="panel" autocomplete="off" novalidate>
+      <div class="form-head">
+        <h2 data-i18n="yourInvoice">Tu factura</h2>
+        <div class="form-actions">
+          <button type="button" class="ghost" id="example" data-i18n="loadExample">Cargar ejemplo</button>
+          <button type="button" class="ghost" id="clear" data-i18n="clear">Vaciar</button>
+        </div>
+      </div>
+      <p class="example-note" id="example-note" data-i18n="exampleNote">Estos datos son un ejemplo. Cámbialos por los de tu factura.</p>
+
+      <fieldset>
+        <legend data-i18n="seller">Vendedor (tú)</legend>
+        <div class="row">
+          <label><span data-i18n="name">Nombre o razón social</span><input id="seller-name"></label>
+          <label><span>NIF</span><input id="seller-nif" placeholder="B12345674" spellcheck="false"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend data-i18n="buyer">Cliente <span class="opt">(opcional)</span></legend>
+        <div class="row">
+          <label><span data-i18n="name">Nombre o razón social</span><input id="buyer-name"></label>
+          <label><span>NIF</span><input id="buyer-nif" spellcheck="false"></label>
+        </div>
+        <p class="hint" data-i18n="buyerHint">Sin el NIF del cliente, la factura es simplificada.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend data-i18n="invoiceData">Factura</legend>
+        <div class="row three">
+          <label><span data-i18n="number">Número</span><input id="number" spellcheck="false"></label>
+          <label><span data-i18n="date">Fecha</span><input id="date" type="date"></label>
+          <label class="check"><input id="kind" type="checkbox"> <span data-i18n="isCredit">Es rectificativa</span></label>
+        </div>
+        <div class="row" id="corrects-row" hidden>
+          <label><span data-i18n="correctsNumber">Nº de la factura que corrige</span><input id="corrects-number"></label>
+          <label><span data-i18n="correctsDate">Fecha de esa factura</span><input id="corrects-date" type="date"></label>
+          <label class="wide"><span data-i18n="reason">Motivo</span><input id="corrects-reason"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend data-i18n="lines">Líneas</legend>
+        <label class="check"><input id="inclusive" type="checkbox" checked> <span data-i18n="inclusive">Los precios incluyen IVA</span></label>
+        <div class="lines-head" aria-hidden="true">
+          <span data-i18n="description">Descripción</span><span data-i18n="qty">Cant.</span><span data-i18n="price">Precio</span><span data-i18n="vat">IVA</span><span></span>
+        </div>
+        <div id="lines"></div>
+        <button type="button" class="ghost add" id="add-line" data-i18n="addLine">+ Añadir línea</button>
+      </fieldset>
+
+      <fieldset>
+        <legend data-i18n="statedTotalLegend">Total impreso en tu factura <span class="opt">(opcional)</span></legend>
+        <label class="short"><span data-i18n="statedTotal">Total</span><input id="stated-total" inputmode="decimal" placeholder="0,00"></label>
+      </fieldset>
+    </form>
+
+    <aside class="results" aria-live="polite">
+      <div class="panel status" id="status"></div>
+      <div class="panel" id="issues-panel"><h2 data-i18n="whatToFix">Qué revisar</h2><ul id="issues" class="issues"></ul></div>
+      <div class="panel">
+        <h2 data-i18n="totals">Totales</h2>
+        <table class="totals" id="totals"></table>
+      </div>
+      <div class="panel">
+        <h2>Verifactu</h2>
+        <div class="vf">
+          <div id="qr" class="qr" role="img"></div>
+          <div class="vf-text">
+            <p data-i18n="vfExplain">Desde la entrada en vigor de Verifactu, cada factura lleva este QR. Al escanearlo, tu cliente puede comprobarla en la web de Hacienda.</p>
+            <p class="mono small"><span data-i18n="fingerprint">Huella de ejemplo</span>: <span id="fp"></span></p>
+            <button type="button" id="pdf" class="primary" data-i18n="downloadPdf">Descargar PDF de ejemplo</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="panel notes">
+    <h2 data-i18n="aboutTitle">Sobre esta herramienta</h2>
+    <p data-i18n="about1">Revisa los requisitos básicos de una factura en España y prepara los datos que pide Verifactu: el tipo de factura, la huella encadenada y el código QR. No envía nada a la Agencia Tributaria y no sustituye a un asesor fiscal.</p>
+    <p data-i18n="about2">Las fechas de Verifactu han cambiado varias veces. Consulta siempre el calendario vigente en el BOE o en la web de la AEAT.</p>
+    <p class="small"><span data-i18n="madeBy">Hecho por</span> <a href="https://github.com/daen8584-spec">daen8584</a> · <a href="https://github.com/daen8584-spec/einvoice-kit" data-i18n="code">Código</a></p>
+  </section>
+</main>
+<script type="module" src="./main.ts"></script>
+</body>
+</html>
