@@ -192,7 +192,7 @@ export class Worker {
 export function deleteShop(db: Database, shop: string): void {
   db.exec("begin immediate");
   try {
-    for (const table of ["documents", "ledger", "series", "held", "skipped", "waiting_refunds", "settings", "shops", "inbox"])
+    for (const table of ["documents", "ledger", "series", "held", "skipped", "waiting_refunds", "settings", "agreements", "shops", "inbox"])
       db.prepare(`delete from ${table} where shop = ?`).run(shop);
     db.exec("commit");
   } catch (error) {

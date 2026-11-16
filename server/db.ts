@@ -24,6 +24,11 @@ const APP_SCHEMA = `
     last_error text, processed_at text
   );
   create index if not exists inbox_due on inbox (status, next_attempt_at);
+  -- Which version of the terms each shop accepted, and when.
+  create table if not exists agreements (
+    shop text not null, version integer not null, accepted_at text not null,
+    primary key (shop, version)
+  );
   create table if not exists compliance_requests (
     id integer primary key autoincrement,
     shop text not null, topic text not null, payload text not null, received_at text not null
@@ -51,3 +56,15 @@ export function saveSettings(db: Database, shop: string, settings: ShopSettings)
 
 /** Before the shop has entered its details, invoices are drafted with none and held. */
 export const UNCONFIGURED: ShopSettings = { seller: { name: "" } };
+
+/** Bump when the terms or the data processing agreement change: shops are asked to accept again. */
+export const TERMS_VERSION = 1;
+export const LEGAL_URL = "https://daen8584-spec.github.io/einvoice-kit/legal/";
+
+export function termsAccepted(db: Database, shop: string): boolean {
+  return Boolean(db.prepare("select 1 from agreements where shop = ? and version = ?").get(shop, TERMS_VERSION));
+}
+
+export function acceptTerms(db: Database, shop: string, at: Date): void {
+  db.prepare("insert or ignore into agreements (shop, version, accepted_at) values (?, ?, ?)").run(shop, TERMS_VERSION, at.toISOString());
+}

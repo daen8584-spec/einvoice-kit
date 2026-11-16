@@ -109,7 +109,7 @@ const api = (method: "GET" | "PUT" | "POST", url: string, payload?: object, toke
 
 const orderId = (name: string) => Number(byName(name).legacyResourceId);
 const refundId = (name: string, i: number) => Number(byName(name).refunds![i]!.legacyResourceId);
-const settings = { name: "Tienda Prueba Einvoice SL", taxId: "A28015865", line1: "Gran Vía 1", city: "Madrid", postalCode: "28013" };
+const settings = { name: "Tienda Prueba Einvoice SL", taxId: "A28015865", line1: "Gran Vía 1", city: "Madrid", postalCode: "28013", acceptTerms: true };
 
 async function openApp() {
   const res = await api("GET", "/api/overview");
@@ -165,6 +165,22 @@ describe("the admin page's API", () => {
     const row = db.prepare("select access_token, refresh_token from shops where shop = ?").get(SHOP) as { access_token: string; refresh_token: string };
     expect(row.access_token).not.toContain(shopify.accessToken);
     expect(row.refresh_token).not.toContain(shopify.refreshToken);
+  });
+
+  it("asks a shop to accept the terms once, and records when", async () => {
+    await openApp();
+    const { acceptTerms: _, ...withoutTerms } = settings;
+    const refused = await api("PUT", "/api/settings", withoutTerms);
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().errors).toEqual({ acceptTerms: "required" });
+    expect((await openApp()).terms.accepted).toBe(false);
+
+    expect((await api("PUT", "/api/settings", settings)).statusCode).toBe(200);
+    const row = db.prepare("select version, accepted_at from agreements where shop = ?").get(SHOP) as { version: number; accepted_at: string };
+    expect(row).toEqual({ version: 1, accepted_at: "2026-11-16T17:00:00.000Z" });
+    // Later saves don't ask again.
+    expect((await api("PUT", "/api/settings", withoutTerms)).statusCode).toBe(200);
+    expect((await openApp()).terms).toMatchObject({ accepted: true, version: 1 });
   });
 
   it("refuses a seller tax ID with a typo", async () => {
@@ -329,7 +345,7 @@ describe("what the app keeps", () => {
 
     await webhook("shop/redact", { shop_domain: SHOP });
     await worker.drain();
-    for (const table of ["documents", "ledger", "series", "held", "skipped", "waiting_refunds", "settings", "shops"]) {
+    for (const table of ["documents", "ledger", "series", "held", "skipped", "waiting_refunds", "settings", "agreements", "shops"]) {
       const n = db.prepare(`select count(*) as n from ${table} where shop = ?`).get(SHOP) as { n: number };
       expect(n.n, table).toBe(0);
     }

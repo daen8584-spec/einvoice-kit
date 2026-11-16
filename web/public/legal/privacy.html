@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy policy · einvoice-kit</title>
+<link rel="stylesheet" href="legal.css">
+</head>
+<body><main>
+<h1>Privacy policy</h1>
+<p class="meta">einvoice-kit · version 1 · 16 November 2026 · <a href="privacidad.html">Español</a> (the Spanish version prevails)</p>
+<p class="note">Draft. The details highlighted in yellow must be filled in, and a professional should review it, before the app is used with real stores.</p>
+
+<h2>Who runs the app</h2>
+<p>einvoice-kit is an app that issues invoices for Shopify stores. It's built and maintained by an independent developer. Contact: <span class="blank">[CONTACT EMAIL]</span>. Country: <span class="blank">[COUNTRY]</span>.</p>
+
+<h2>Who decides about the data</h2>
+<ul>
+  <li><b>The store's customers' data</b> (as it appears in orders): the store is the controller. einvoice-kit processes it only on the store's behalf, to issue its invoices, under the <a href="terms.html#dpa">data processing agreement</a>.</li>
+  <li><b>The store's own data</b> (its domain and the invoicing details it enters): einvoice-kit is the controller and uses it only to provide the service.</li>
+</ul>
+
+<h2>What data the app uses</h2>
+<div class="tw"><table>
+<tr><th>From</th><th>What</th></tr>
+<tr><td>Shopify orders and refunds</td><td>Order number and date, products, quantities, prices, discounts, taxes and shipping. About the customer: their tax ID if they give one at checkout, the billing name or company, and the billing address (street, city, postal code and country).</td></tr>
+<tr><td>The store</td><td>The store's domain, the invoicing details it enters in the app (company name, tax ID, address, time zone, exemption text) and an access permission from Shopify.</td></tr>
+</table></div>
+<p>The app does <b>not</b> use customers' email addresses or phone numbers, uses no tracking or analytics cookies, and builds no profiles. In the browser it only remembers the chosen language.</p>
+
+<h2>What for</h2>
+<p>Only to issue the store's invoices and credit notes, prepare the Verifactu records, and let the store download them. Nothing else: no advertising, no selling data, no sharing it for other purposes.</p>
+
+<h2>How it's protected</h2>
+<ul>
+  <li>Connections with Shopify and with the store's admin are encrypted (HTTPS), and every Shopify notification is checked against its signature before it's used.</li>
+  <li>Stored invoices, drafts and notifications are encrypted with AES-256-GCM. Shopify's access permission is stored encrypted too.</li>
+  <li>Shopify's notifications are emptied as soon as they're processed and deleted after 30 days.</li>
+</ul>
+
+<h2>How long it's kept</h2>
+<p>For as long as the store has the app installed. When it uninstalls, Shopify asks for deletion 48 hours later, and the app then deletes everything about that store: invoices, records, invoicing details and permissions.</p>
+<p><b>The app doesn't keep a store's invoices long term.</b> The law requires the store to keep its invoices for years; for that, the app lets it download all of them at any time, and the store must keep its own copy.</p>
+
+<h2>Providers involved</h2>
+<ul>
+  <li><b>Shopify</b>, where the orders come from.</li>
+  <li><b>The server the app runs on</b>: <span class="blank">[HOSTING PROVIDER AND COUNTRY]</span>. During testing, a device of the developer's.</li>
+  <li><b>Cloudflare</b>, which carries connections to that server during testing.</li>
+</ul>
+<p>Some of these providers may process data outside the European Economic Area under the safeguards they offer.</p>
+
+<h2>Your rights</h2>
+<p>If you're a store's customer, exercise your rights (access, correction, deletion and so on) with the store: it decides about your data, and einvoice-kit will help it. Note that the store may have to keep its invoices by law. When Shopify passes on one of these requests, the app logs it with the order numbers involved only.</p>
+<p>If you're a store, write to <span class="blank">[CONTACT EMAIL]</span>. You can also complain to the Spanish Data Protection Agency (aepd.es) or your country's authority.</p>
+
+<h2>Changes</h2>
+<p>If this policy changes, the new version will be published here with its date, and the app will tell stores.</p>
+
+<nav><a href="terms.html">Terms and data processing agreement</a> · <a href="../">Invoice checker</a></nav>
+</main></body>
+</html>

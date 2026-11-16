@@ -4,7 +4,7 @@ import { verifyChain } from "../src/es/verify.js";
 import { validateTaxId } from "../src/es/nif.js";
 import { renderInvoicePdf, type Lang } from "../src/pdf.js";
 import type { ShopSettings } from "../src/shopify/to-invoice.js";
-import { loadSettings, saveSettings } from "./db.js";
+import { acceptTerms, LEGAL_URL, loadSettings, saveSettings, termsAccepted, TERMS_VERSION } from "./db.js";
 import { exportShop } from "./export.js";
 import { ShopifyClient, ShopifyUnavailable, Unauthorized, verifyIdToken, verifyWebhook } from "./shopify.js";
 import { renderAppPage } from "./ui.js";
@@ -103,6 +103,7 @@ export function buildApp(o: AppOptions): FastifyInstance {
       const waiting = o.db.prepare("select count(*) as n from inbox where shop = ? and status = 'pending'").get(shop) as { n: number };
       return {
         settings: loadSettings(o.db, shop),
+        terms: { accepted: termsAccepted(o.db, shop), version: TERMS_VERSION, url: LEGAL_URL },
         documents: docs
           .slice(-200)
           .reverse()
@@ -137,6 +138,8 @@ export function buildApp(o: AppOptions): FastifyInstance {
       if (!text("name")) errors.name = "required";
       const id = validateTaxId(text("taxId"));
       if (!id.valid) errors.taxId = id.reason;
+      const accepted = termsAccepted(o.db, shop);
+      if (!accepted && b.acceptTerms !== true) errors.acceptTerms = "required";
       if (Object.keys(errors).length) return reply.code(422).send({ errors });
 
       const address = Object.fromEntries(
@@ -148,6 +151,7 @@ export function buildApp(o: AppOptions): FastifyInstance {
         ...(text("exemptionText") ? { exemptionText: text("exemptionText") } : {}),
       };
       saveSettings(o.db, shop, settings);
+      if (!accepted) acceptTerms(o.db, shop, new Date(now()));
       // Invoices held for missing details can go out now.
       o.worker.enqueue(`retry:${shop}:${now()}`, shop, TOPICS.retryHeld, "{}");
       o.worker.retryNow(shop);

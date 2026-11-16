@@ -77,6 +77,10 @@ ul.issues { margin:6px 0 0; padding-left:18px; }
       <label><span data-t="postalCode">Código postal</span><input id="f-postalCode" name="postalCode" inputmode="numeric"></label>
       <label><span data-t="timeZone">Zona horaria</span><select id="f-timeZone" name="timeZone"><option value="Europe/Madrid">Península y Baleares</option><option value="Atlantic/Canary">Canarias</option></select></label>
       <label style="grid-column:1/-1"><span data-t="exemption">Motivo para productos sin IVA</span><input id="f-exemptionText" name="exemptionText"><span class="hint" data-t="exemptionHint">Solo si vendes algo exento, por ejemplo «Exento, art. 20 LIVA».</span></label>
+      <label id="terms-row" class="check" style="grid-column:1/-1; flex-direction:row; align-items:flex-start; gap:8px" hidden>
+        <input type="checkbox" id="f-acceptTerms" style="margin-top:4px">
+        <span id="terms-text">Acepto los términos de uso y el acuerdo de encargo del tratamiento.</span>
+      </label>
       <div class="row" style="grid-column:1/-1"><button type="submit" data-t="save">Guardar</button><span id="saved" class="muted" role="status"></span></div>
     </form>
   </section>
@@ -90,6 +94,7 @@ ul.issues { margin:6px 0 0; padding-left:18px; }
       <tbody></tbody>
     </table></div>
   </section>
+  <footer class="muted" id="legal" style="font-size:12px"></footer>
 </main>
 <script>
 const T = {
@@ -102,6 +107,7 @@ const T = {
     error:"No se ha podido cargar. Vuelve a intentarlo.", credit:"Rectificativa",
     access:"Shopify no deja a la app leer estos datos del cliente: {f}. En el Partner Dashboard, abre la app → Solicitudes de acceso a la API → Datos de clientes protegidos, marca esos campos con un motivo, guarda y pulsa Reintentar.",
     retryAll:"Reintentar ahora", retrying:"Reintentando…", export:"Descargar todo (ZIP)", exporting:"Preparando…",
+    terms:"Acepto los {t} y el {d}.", termsLink:"términos de uso", dpaLink:"acuerdo de encargo del tratamiento", needTerms:"Para empezar, acepta los términos.", privacy:"Política de privacidad", termsFooter:"Términos de uso",
     keepCopies:"Guarda copias de tus facturas fuera de la app: la ley te obliga a conservarlas, y la app no lo garantiza. Si la desinstalas, todo se borra a las 48 horas.", blocked:"Hay pedidos que todavía no se han podido facturar. Mira el aviso de abajo.", pending:"Procesando pedidos recientes…", fields:{ name:"nombre", address1:"dirección", zip:"código postal", city:"ciudad", company:"empresa", firstName:"nombre", lastName:"apellidos", phone:"teléfono", email:"correo" } },
   en: { title:"Invoices", loading:"Loading…", issued:"Issued", heldCount:"On hold", chain:"Verifactu chain", heldTitle:"On hold: need a change", retry:"Try again",
     heldHelp:"Nothing has been issued for these orders. Fix them in Shopify or complete your details, and they'll go out on their own.", settingsTitle:"Your invoicing details", name:"Company or full name",
@@ -112,6 +118,7 @@ const T = {
     error:"Couldn't load. Try again.", credit:"Credit note",
     access:"Shopify isn't letting the app read these customer details: {f}. In the Partner Dashboard, open the app → API access requests → Protected customer data, tick those fields with a reason, save, and press Try again.",
     retryAll:"Try again now", retrying:"Trying again…", export:"Download everything (ZIP)", exporting:"Preparing…",
+    terms:"I accept the {t} and the {d}.", termsLink:"terms of use", dpaLink:"data processing agreement", needTerms:"To start, accept the terms.", privacy:"Privacy policy", termsFooter:"Terms of use",
     keepCopies:"Keep copies of your invoices outside the app: the law requires you to keep them, and the app doesn't guarantee it. If you uninstall it, everything is deleted after 48 hours.", blocked:"Some orders couldn't be invoiced yet. See the notice below.", pending:"Processing recent orders…", fields:{ name:"name", address1:"address", zip:"postal code", city:"city", company:"company", firstName:"first name", lastName:"last name", phone:"phone", email:"email" } },
 };
 let lang = "es";
@@ -147,6 +154,12 @@ function render() {
   $("access").hidden = missing.length === 0;
   if (missing.length) $("access").textContent = t("access").replace("{f}", missing.map((f) => T[lang].fields[f] || f).join(", "));
   $("held-card").hidden = d.held.length === 0;
+  const base = d.terms.url, es = lang === "es";
+  const link = (href, text) => { const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = text; return a; };
+  $("terms-row").hidden = d.terms.accepted;
+  const parts = t("terms").split(/(\{t\}|\{d\})/);
+  $("terms-text").replaceChildren(...parts.map((p) => p === "{t}" ? link(base + (es ? "terminos.html" : "terms.html"), t("termsLink")) : p === "{d}" ? link(base + (es ? "terminos.html#encargo" : "terms.html#dpa"), t("dpaLink")) : document.createTextNode(p)));
+  $("legal").replaceChildren(link(base + (es ? "privacidad.html" : "privacy.html"), t("privacy")), document.createTextNode(" · "), link(base + (es ? "terminos.html" : "terms.html"), t("termsFooter")));
   $("held").replaceChildren(...d.held.map((h) => {
     const div = document.createElement("div"); div.className = "held";
     const b = document.createElement("b"); b.textContent = h.reference || h.key;
@@ -192,11 +205,12 @@ $("settings").addEventListener("submit", async (e) => {
   for (const f of fields) $("f-" + f).removeAttribute("aria-invalid");
   $("saved").textContent = "";
   const body = Object.fromEntries(fields.map((f) => [f, $("f-" + f).value]));
+  body.acceptTerms = $("f-acceptTerms").checked;
   const res = await fetch("/api/settings", { method:"PUT", headers:{ "content-type":"application/json" }, body: JSON.stringify(body) });
   if (res.status === 422) {
     const { errors } = await res.json();
     for (const f of Object.keys(errors)) $("f-" + f).setAttribute("aria-invalid", "true");
-    $("saved").textContent = errors.taxId ? t("badTaxId") : t("required");
+    $("saved").textContent = errors.taxId ? t("badTaxId") : errors.acceptTerms ? t("needTerms") : t("required");
     return;
   }
   if (res.ok) { $("saved").textContent = t("saved"); setTimeout(load, 1500); }
