@@ -18,7 +18,8 @@
     "simulate": "vite-node scripts/simulate.ts",
     "mutations": "python3 scripts/mutations.py",
     "build:server": "tsc -p tsconfig.server.json",
-    "start": "node dist/server/main.js"
+    "start": "node dist/server/main.js",
+    "dev:server": "npm run build:server && node dist/server/main.js"
   },
   "dependencies": {
     "fastify": "5.12.7",

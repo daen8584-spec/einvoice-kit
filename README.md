@@ -92,13 +92,17 @@ npm run build:server
 SHOPIFY_API_KEY=... SHOPIFY_API_SECRET=... TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32) npm start
 ```
 
+### Running it from a phone
+
+No server needed for testing: [`scripts/run-on-phone.sh`](scripts/run-on-phone.sh) runs the app on an Android phone with Termux. A free Cloudflare quick tunnel gives the phone a public address, and Shopify CLI points the app and its webhooks at that address each time it starts. The first run also connects the app to a Shopify account. The app only works while the script is running; Shopify retries anything it couldn't deliver in the meantime.
+
 ## Status
 
 Done and tested: the invoicing core, the free checker, and the app server with its admin page.
 
 Still to do before the App Store:
 
-- Hosting, and filling in [`shopify.app.toml`](shopify.app.toml) with the app's client ID and address
+- Hosting for real stores (testing runs from a phone, see above)
 - Sending records to the AEAT. Until then the PDF has no Verifactu QR code, since the QR tells customers the invoice can be checked with the tax office
 - Approval from Shopify to read customer names and addresses (protected customer data)
 - Deciding, with legal advice, how long to keep invoices after a shop uninstalls: Spanish law requires keeping them for years, while Shopify asks apps to delete shop data

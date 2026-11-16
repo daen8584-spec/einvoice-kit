@@ -1,0 +1,8 @@
+# How Shopify CLI runs the app during `shopify app dev`: one process that serves
+# both the admin page and the webhooks.
+name = "einvoice-kit"
+roles = ["frontend", "backend"]
+webhooks_path = "/webhooks"
+
+[commands]
+dev = "npm run dev:server"
