@@ -4,6 +4,7 @@
  * means every check passed for every order, refund and record.
  */
 import { createHash } from "node:crypto";
+import type { DocumentStore } from "../../src/store.js";
 import { InvoiceService, type IssuedDocument } from "../../src/app.js";
 import { verifyChain } from "../../src/es/verify.js";
 import type { ChainedRecord } from "../../src/es/verifactu.js";
@@ -20,7 +21,8 @@ type Event = { at: number; kind: "order"; sim: SimOrder; order: ShopifyOrder } |
 
 const plain = (c: bigint) => { const n = c < 0n; const a = n ? -c : c; return `${n ? "-" : ""}${a / 100n}.${String(a % 100n).padStart(2, "0")}`; };
 
-export async function runSimulation(orderCount: number, seed = 1): Promise<Report> {
+/** `store` lets the same audit run against any storage, such as the SQLite database. */
+export async function runSimulation(orderCount: number, seed = 1, store?: DocumentStore): Promise<Report> {
   const started = Date.now();
   const rnd = new Random(seed);
   const sims = Array.from({ length: orderCount }, (_, i) => makeOrder(rnd, i + 1));
@@ -39,7 +41,7 @@ export async function runSimulation(orderCount: number, seed = 1): Promise<Repor
   let now = 0;
   const service = new InvoiceService(
     { seller: { name: "Tienda Simulada SL", taxId: "A28015865" }, exemptionText: "Exento, art. 20 LIVA" },
-    undefined, undefined, () => new Date(now),
+    store, () => new Date(now),
   );
 
   // Notifications within the same minute are handled at the same time.
@@ -59,6 +61,8 @@ export async function runSimulation(orderCount: number, seed = 1): Promise<Repor
   const fact = (k: string) => { facts[k] = (facts[k] ?? 0) + 1; };
 
   const docs = service.documents;
+  const heldDocs = service.held;
+  const skippedDocs = service.skipped;
   for (const sim of sims) {
     const o = sim.order;
     const needsFix = sim.taxId === "invalid" || (sim.taxId === "none" && sim.charged > 300_000n);
@@ -66,12 +70,12 @@ export async function runSimulation(orderCount: number, seed = 1): Promise<Repor
 
     if (needsFix && !sim.correction) {
       // Never fixed: nothing may be issued for this order, not even its refunds.
-      const held = service.held.get(`order:${o.id}`);
+      const held = heldDocs.get(`order:${o.id}`);
       const codes = held ? held.issues.filter((x) => x.level === "error").map((x) => x.code) : [];
       const want = sim.taxId === "invalid" ? "buyer-nif" : "simplified-limit";
       expect(!doc && Boolean(held) && codes.includes(want), () => `${o.name}: should be held for ${want}, got ${doc ? "an issued invoice" : codes.join(",")}`);
       for (const r of sim.refunds)
-        expect(!docs.has(`refund:${r.refund.id}`) && service.held.has(`refund:${r.refund.id}`), () => `${o.name}: refund ${r.refund.id} was issued for a held invoice`);
+        expect(!docs.has(`refund:${r.refund.id}`) && heldDocs.has(`refund:${r.refund.id}`), () => `${o.name}: refund ${r.refund.id} was issued for a held invoice`);
       fact(sim.taxId === "invalid" ? "held: mistyped tax ID, never fixed" : "held: over €3,000 without tax ID, never fixed");
       if (sim.refunds.length) fact("held: refunds waiting for a held invoice");
       continue;
@@ -114,7 +118,7 @@ export async function runSimulation(orderCount: number, seed = 1): Promise<Repor
     let refundedAll = 0n, refundedTax = 0n;
     for (const r of sim.refunds) {
       if (r.expected.units === 0) {
-        const skipped = service.skipped.get(`refund:${r.refund.id}`);
+        const skipped = skippedDocs.get(`refund:${r.refund.id}`);
         expect(Boolean(skipped) && !docs.has(`refund:${r.refund.id}`), () => `${o.name}: refund ${r.refund.id} with nothing left should issue no credit note`);
         fact("refunds with nothing left, correctly skipped");
         continue;

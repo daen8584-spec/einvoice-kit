@@ -16,9 +16,12 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build",
     "simulate": "vite-node scripts/simulate.ts",
-    "mutations": "python3 scripts/mutations.py"
+    "mutations": "python3 scripts/mutations.py",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start": "node dist/server/main.js"
   },
   "dependencies": {
+    "fastify": "5.12.7",
     "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4"
   },

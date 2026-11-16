@@ -1,0 +1,22 @@
+# Shopify app configuration. Fill in client_id and application_url once the app
+# exists in the Dev Dashboard and the server has a public address, then run
+# `shopify app deploy` to send this configuration to Shopify.
+name = "einvoice-kit"
+client_id = "REPLACE_WITH_CLIENT_ID"
+application_url = "https://REPLACE_WITH_APP_HOST/"
+embedded = true
+
+[access_scopes]
+# Orders, refunds and the customer's billing details are all the app reads.
+scopes = "read_orders"
+
+[webhooks]
+api_version = "2026-10"
+
+[[webhooks.subscriptions]]
+topics = ["orders/paid", "orders/updated", "refunds/create", "app/uninstalled"]
+uri = "/webhooks"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "/webhooks"

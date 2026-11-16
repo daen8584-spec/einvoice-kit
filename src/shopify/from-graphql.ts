@@ -11,6 +11,7 @@ type TaxLine = { title: string; rate: number; priceSet: Money };
 type Allocation = { allocatedAmountSet: Money };
 
 export interface GraphQLOrder {
+  id?: string;
   legacyResourceId: string;
   name: string;
   createdAt: string;

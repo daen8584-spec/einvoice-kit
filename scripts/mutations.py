@@ -1,7 +1,8 @@
 """
 Breaks the app on purpose, one way at a time, and checks the simulation notices.
 A simulation that still passes with a bug in place would be giving false comfort.
-Each bug is run against the simulated store and then the real Shopify test-store data.
+Each bug is run against the simulated store, then the real Shopify test-store data
+and the database tests.
 
 Run:  python3 scripts/mutations.py
 """
@@ -17,7 +18,7 @@ MUTATIONS = [
      "return Math.round((total * count) / quantity);"),
     ("Forget that a notification is already being handled",
      "src/app.ts",
-     "    if (running) return running;\n\n    const job = this.queue.then(async () => {\n      const again = this.documents.get(key) ?? this.skipped.get(key);",
+     "    if (running) return running;\n\n    const job = this.queue.then(async () => {\n      const again = this.store.document(key) ?? this.store.skippedRefund(key);",
      "\n    const job = this.queue.then(async () => {\n      const again = undefined;"),
     ("Date invoices in UTC instead of Spanish time",
      "src/shopify/to-invoice.ts", 'new Intl.DateTimeFormat("en-GB", { timeZone, year', 'new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", year'),
@@ -27,15 +28,16 @@ MUTATIONS = [
      "src/es/verifactu.ts", '"CuotaTotal", "ImporteTotal",', '"ImporteTotal", "CuotaTotal",'),
     ("Ignore discounts on refunded items",
      "src/shopify/to-invoice.ts", "const paid = full.unitPrice * item.quantity - (full.discount ?? 0);", "const paid = full.unitPrice * item.quantity;"),
-    ("Take a number before checking a refund has anything to credit",
-     "src/app.ts", 'const draft = refundToCreditNote(order, refund, original.invoice, this.settings, this.placeholder("R", issuedAt), issuedAt);',
-     'await nextNumber(this.sequences, "R", this.issueDate(issuedAt), key + ":early");\n      const draft = refundToCreditNote(order, refund, original.invoice, this.settings, this.placeholder("R", issuedAt), issuedAt);'),
+    ("Issue credit notes for refunds with nothing left to credit",
+     "src/app.ts", "if (draft.invoice.lines.length === 0)", "if (false)"),
     ("Issue invoices even when a check finds an error",
      "src/app.ts", 'const errorsIn = (issues: Issue[]) => issues.filter((i) => i.level === "error");', "const errorsIn = (_issues: Issue[]): Issue[] => [];"),
     ("Ignore the refund amounts Shopify reports and split them ourselves",
      "src/shopify/to-invoice.ts", "const exact = r.subtotal !== undefined", "const exact = false && r.subtotal !== undefined"),
-    ("Never retry the refunds that waited for a held invoice",
-     "src/app.ts", 'if (!("held" in outcome) && waiting?.size) {', 'if (false) {'),
+    ("Never release the refunds that waited for a held invoice when it's fixed",
+     "src/app.ts", 'if (!("held" in outcome)) await this.releaseWaitingRefunds(order.id, outcome);', ''),
+    ("Keep half of an invoice in the database when issuing fails halfway",
+     "src/sqlite-store.ts", 'this.db.exec("rollback");\n      throw error;\n    }\n  }\n\n  saveSkipped', 'this.db.exec("commit");\n      throw error;\n    }\n  }\n\n  saveSkipped'),
 ]
 
 missed = 0
@@ -51,10 +53,10 @@ for name, file, old, new in MUTATIONS:
         # The simulated store, then the real orders and refunds from the Shopify test store.
         r = subprocess.run(["npx", "vite-node", "scripts/simulate.ts", "3000", "2026"], cwd=ROOT, capture_output=True, text=True, timeout=600)
         if r.returncode == 0:
-            live = subprocess.run(["npx", "vitest", "run", "test/live.test.ts"], cwd=ROOT, capture_output=True, text=True, timeout=600)
+            live = subprocess.run(["npx", "vitest", "run", "test/live.test.ts", "test/store.test.ts"], cwd=ROOT, capture_output=True, text=True, timeout=900)
             if live.returncode != 0:
                 failed = [l.strip() for l in live.stdout.splitlines() if "×" in l or "FAIL" in l]
-                r = subprocess.CompletedProcess(r.args, 1, stdout="1 FAILED:\n- real Shopify data: " + (failed[0] if failed else "live test failed"), stderr="")
+                r = subprocess.CompletedProcess(r.args, 1, stdout="1 FAILED:\n- tests: " + (failed[0] if failed else "live test failed"), stderr="")
     finally:
         path.write_text(original, encoding="utf8")
     if r.returncode == 0:
