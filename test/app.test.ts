@@ -10,7 +10,7 @@ const at = (iso: string) => () => new Date(iso);
 
 describe("the app's notification handling", () => {
   it("issues one invoice however many times Shopify sends the order", async () => {
-    const app = new InvoiceService(shop, undefined, undefined, at("2026-04-01T09:00:00Z"));
+    const app = new InvoiceService(shop, undefined, at("2026-04-01T09:00:00Z"));
     const results = await Promise.all([app.onOrder(o), app.onOrder(o), app.onOrder(o)]);
     expect(new Set(results)).toHaveProperty("size", 1);
     expect(app.documents.size).toBe(1);
@@ -18,7 +18,7 @@ describe("the app's notification handling", () => {
   });
 
   it("holds an invoice with a mistyped tax ID, using no number, and issues it once fixed", async () => {
-    const app = new InvoiceService(shop, undefined, undefined, at("2026-04-02T09:00:00Z"));
+    const app = new InvoiceService(shop, undefined, at("2026-04-02T09:00:00Z"));
     const typo = { ...o, note_attributes: [{ name: "NIF", value: "B12345675" }] };
     const first = await app.onOrder(typo);
     expect("held" in first && first.issues.map((i) => i.code)).toEqual(["buyer-nif"]);

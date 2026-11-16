@@ -12,7 +12,7 @@ const shop = { seller: { name: "Tienda Prueba Einvoice SL", taxId: "A28015865" }
 
 describe("real orders from the Shopify test store", () => {
   it.each(orders.map((o) => [o.raw.name, o] as const))("%s: matches Shopify's total and VAT, or is held", async (name, { raw, order }) => {
-    const app = new InvoiceService(shop, undefined, undefined, () => new Date("2026-11-16T16:00:00Z"));
+    const app = new InvoiceService(shop, undefined, () => new Date("2026-11-16T16:00:00Z"));
     const out = await app.onOrder(order);
     if (name === "#1002") {
       // €3,799.80 with no customer tax ID can't be a simplified invoice.
@@ -34,7 +34,7 @@ describe("real refunds from the Shopify test store", () => {
   const refunded = orders.filter((o) => o.order.refunds!.length > 0);
 
   it.each(refunded.map((o) => [o.raw.name, o] as const))("%s: every credit note matches what Shopify refunded", async (_name, { raw, order }) => {
-    const app = new InvoiceService(shop, undefined, undefined, () => new Date("2026-11-16T17:00:00Z"));
+    const app = new InvoiceService(shop, undefined, () => new Date("2026-11-16T17:00:00Z"));
     await app.onOrder(order);
     for (const [i, refund] of order.refunds!.entries()) {
       const r = raw.refunds![i]!;
@@ -52,7 +52,7 @@ describe("real refunds from the Shopify test store", () => {
 
   it("#1001: three refunds of one unit add up to exactly the line", async () => {
     const { order } = orders.find((o) => o.raw.name === "#1001")!;
-    const app = new InvoiceService(shop, undefined, undefined, () => new Date("2026-11-16T17:00:00Z"));
+    const app = new InvoiceService(shop, undefined, () => new Date("2026-11-16T17:00:00Z"));
     const inv = await app.onOrder(order);
     let total = 0, tax = 0;
     for (const [i, refund] of order.refunds!.entries()) {
