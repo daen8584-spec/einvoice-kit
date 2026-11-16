@@ -38,6 +38,8 @@ MUTATIONS = [
      "src/shopify/to-invoice.ts", "const exact = r.subtotal !== undefined", "const exact = false && r.subtotal !== undefined"),
     ("Never release the refunds that waited for a held invoice when it's fixed",
      "src/app.ts", 'if (!("held" in outcome)) await this.releaseWaitingRefunds(order.id, outcome);', ''),
+    ("Store invoices without encrypting them",
+     "src/sqlite-store.ts", "    return pack(value, this.cipher);", "    return pack(value);"),
     ("Keep half of an invoice in the database when issuing fails halfway",
      "src/sqlite-store.ts", 'this.db.exec("rollback");\n      throw error;\n    }\n  }\n\n  saveSkipped', 'this.db.exec("commit");\n      throw error;\n    }\n  }\n\n  saveSkipped'),
 ]

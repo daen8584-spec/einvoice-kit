@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import type { DatabaseSync as Database } from "node:sqlite";
+import { pack, unpack, type Cipher } from "./crypto.js";
 import type { ChainedRecord } from "./es/verifactu.js";
 import {
   assertCommittable,
@@ -54,26 +55,45 @@ export function openDatabase(path: string): Database {
 }
 
 type Row = Record<string, unknown>;
-const parse = <T>(value: unknown, column = "doc"): T | undefined => {
-  const row = value as Row | undefined;
-  return row ? (JSON.parse(String(row[column])) as T) : undefined;
-};
 
-/** One shop's documents in a SQLite database. Several shops can share a database. */
+/** Tables and columns that hold customer data, encrypted when the store has a key. */
+export const ENCRYPTED_COLUMNS = [
+  ["documents", "doc"],
+  ["held", "doc"],
+  ["skipped", "doc"],
+  ["waiting_refunds", "entry"],
+] as const;
+
+/**
+ * One shop's documents in a SQLite database. Several shops can share a database.
+ *
+ * With a cipher, everything that can hold customer data (invoices, held drafts,
+ * waiting refunds) is encrypted. The Verifactu chain isn't: it holds only the
+ * seller's tax ID, numbers, dates and totals, and stays checkable without the key.
+ */
 export class SqliteStore implements DocumentStore {
   constructor(
     private readonly db: Database,
     private readonly shop: string,
+    private readonly cipher?: Cipher,
   ) {}
 
+  private parse<T>(value: unknown, column = "doc"): T | undefined {
+    const row = value as Row | undefined;
+    return row ? unpack<T>(String(row[column]), this.cipher) : undefined;
+  }
+  private pack(value: unknown): string {
+    return pack(value, this.cipher);
+  }
+
   document(key: string) {
-    return parse<IssuedDocument>(this.db.prepare("select doc from documents where shop = ? and key = ?").get(this.shop, key));
+    return this.parse<IssuedDocument>(this.db.prepare("select doc from documents where shop = ? and key = ?").get(this.shop, key));
   }
   skippedRefund(key: string) {
-    return parse<SkippedRefund>(this.db.prepare("select doc from skipped where shop = ? and key = ?").get(this.shop, key));
+    return this.parse<SkippedRefund>(this.db.prepare("select doc from skipped where shop = ? and key = ?").get(this.shop, key));
   }
   heldDocument(key: string) {
-    return parse<HeldDocument>(this.db.prepare("select doc from held where shop = ? and key = ?").get(this.shop, key));
+    return this.parse<HeldDocument>(this.db.prepare("select doc from held where shop = ? and key = ?").get(this.shop, key));
   }
 
   lastNumber(series: string) {
@@ -100,7 +120,7 @@ export class SqliteStore implements DocumentStore {
         .run(this.shop, seq, doc.record.fingerprint, JSON.stringify(doc.record));
       this.db
         .prepare("insert into documents (shop, key, number, issue_date, total, seq, doc) values (?, ?, ?, ?, ?, ?, ?)")
-        .run(this.shop, doc.key, doc.invoice.number, doc.invoice.issueDate, doc.totals.total, seq, JSON.stringify(doc));
+        .run(this.shop, doc.key, doc.invoice.number, doc.invoice.issueDate, doc.totals.total, seq, this.pack(doc));
       this.db.prepare("delete from held where shop = ? and key = ?").run(this.shop, doc.key);
       this.db.exec("commit");
     } catch (error) {
@@ -113,7 +133,7 @@ export class SqliteStore implements DocumentStore {
     this.db.exec("begin immediate");
     try {
       this.db.prepare("delete from held where shop = ? and key = ?").run(this.shop, doc.key);
-      this.db.prepare("insert or replace into skipped (shop, key, doc) values (?, ?, ?)").run(this.shop, doc.key, JSON.stringify(doc));
+      this.db.prepare("insert or replace into skipped (shop, key, doc) values (?, ?, ?)").run(this.shop, doc.key, this.pack(doc));
       this.db.exec("commit");
     } catch (error) {
       this.db.exec("rollback");
@@ -123,34 +143,48 @@ export class SqliteStore implements DocumentStore {
   saveHeld(doc: HeldDocument) {
     this.db
       .prepare("insert or replace into held (shop, key, doc, updated_at) values (?, ?, ?, ?)")
-      .run(this.shop, doc.key, JSON.stringify(doc), new Date().toISOString());
+      .run(this.shop, doc.key, this.pack(doc), new Date().toISOString());
   }
 
   addWaitingRefund(orderId: number, entry: WaitingRefund) {
     this.db
       .prepare("insert or replace into waiting_refunds (shop, order_id, refund_id, entry) values (?, ?, ?, ?)")
-      .run(this.shop, orderId, entry.refund.id, JSON.stringify(entry));
+      .run(this.shop, orderId, entry.refund.id, this.pack(entry));
   }
   waitingRefunds(orderId: number) {
     return this.db
       .prepare("select entry from waiting_refunds where shop = ? and order_id = ?")
       .all(this.shop, orderId)
-      .map((r) => parse<WaitingRefund>(r, "entry")!);
+      .map((r) => this.parse<WaitingRefund>(r, "entry")!);
   }
   removeWaitingRefund(orderId: number, refundId: number) {
     this.db.prepare("delete from waiting_refunds where shop = ? and order_id = ? and refund_id = ?").run(this.shop, orderId, refundId);
   }
 
   allDocuments() {
-    return this.db.prepare("select doc from documents where shop = ? order by seq").all(this.shop).map((r) => parse<IssuedDocument>(r)!);
+    return this.db.prepare("select doc from documents where shop = ? order by seq").all(this.shop).map((r) => this.parse<IssuedDocument>(r)!);
   }
   allSkipped() {
-    return this.db.prepare("select doc from skipped where shop = ?").all(this.shop).map((r) => parse<SkippedRefund>(r)!);
+    return this.db.prepare("select doc from skipped where shop = ?").all(this.shop).map((r) => this.parse<SkippedRefund>(r)!);
   }
   allHeld() {
-    return this.db.prepare("select doc from held where shop = ? order by updated_at").all(this.shop).map((r) => parse<HeldDocument>(r)!);
+    return this.db.prepare("select doc from held where shop = ? order by updated_at").all(this.shop).map((r) => this.parse<HeldDocument>(r)!);
   }
   ledger() {
-    return this.db.prepare("select record from ledger where shop = ? order by seq").all(this.shop).map((r) => parse<ChainedRecord>(r, "record")!);
+    return this.db.prepare("select record from ledger where shop = ? order by seq").all(this.shop).map((r) => JSON.parse(String((r as Row).record)) as ChainedRecord);
   }
+}
+
+/** Encrypts rows written before the store had a key. Safe to run on every start. */
+export function encryptExistingRows(db: Database, cipher: Cipher): number {
+  let changed = 0;
+  for (const [table, column] of ENCRYPTED_COLUMNS) {
+    const rows = db.prepare(`select rowid as id, ${column} as value from ${table} where ${column} not like 'enc1:%'`).all() as { id: number; value: string }[];
+    const update = db.prepare(`update ${table} set ${column} = ? where rowid = ?`);
+    for (const row of rows) {
+      update.run(pack(JSON.parse(row.value), cipher), row.id);
+      changed++;
+    }
+  }
+  return changed;
 }

@@ -1,10 +1,12 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { crc32 } from "node:zlib";
 import { beforeEach, describe, expect, it } from "vitest";
 import live from "./fixtures/live-2026-11-16.json";
 import { buildApp, logSerializers } from "../server/app.js";
 import { openAppDatabase } from "../server/db.js";
 import { ShopifyClient, signIdToken, TokenCipher } from "../server/shopify.js";
 import { TOPICS, Worker } from "../server/worker.js";
+import { Cipher } from "../src/crypto.js";
 import { verifyChain } from "../src/es/verify.js";
 import { toCents } from "../src/money.js";
 import type { GraphQLOrder } from "../src/shopify/from-graphql.js";
@@ -81,7 +83,7 @@ beforeEach(() => {
   shopify = new FakeShopify(() => now);
   db = openAppDatabase(":memory:");
   const client = new ShopifyClient({ apiKey: API_KEY, secret: SECRET, cipher: new TokenCipher(randomBytes(32).toString("base64")), db, fetch: shopify.fetch, now: () => now });
-  worker = new Worker(db, client, () => now);
+  worker = new Worker(db, client, () => now, undefined, new Cipher(randomBytes(32)).derive("documents"));
   app = buildApp({ apiKey: API_KEY, secret: SECRET, db, shopify: client, worker, now: () => now });
 });
 
@@ -107,7 +109,7 @@ const api = (method: "GET" | "PUT" | "POST", url: string, payload?: object, toke
 
 const orderId = (name: string) => Number(byName(name).legacyResourceId);
 const refundId = (name: string, i: number) => Number(byName(name).refunds![i]!.legacyResourceId);
-const settings = { name: "Tienda Prueba Einvoice SL", taxId: "A28015865", line1: "Gran Vía 1", city: "Madrid", postalCode: "28013" };
+const settings = { name: "Tienda Prueba Einvoice SL", taxId: "A28015865", line1: "Gran Vía 1", city: "Madrid", postalCode: "28013", acceptTerms: true };
 
 async function openApp() {
   const res = await api("GET", "/api/overview");
@@ -163,6 +165,22 @@ describe("the admin page's API", () => {
     const row = db.prepare("select access_token, refresh_token from shops where shop = ?").get(SHOP) as { access_token: string; refresh_token: string };
     expect(row.access_token).not.toContain(shopify.accessToken);
     expect(row.refresh_token).not.toContain(shopify.refreshToken);
+  });
+
+  it("asks a shop to accept the terms once, and records when", async () => {
+    await openApp();
+    const { acceptTerms: _, ...withoutTerms } = settings;
+    const refused = await api("PUT", "/api/settings", withoutTerms);
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().errors).toEqual({ acceptTerms: "required" });
+    expect((await openApp()).terms.accepted).toBe(false);
+
+    expect((await api("PUT", "/api/settings", settings)).statusCode).toBe(200);
+    const row = db.prepare("select version, accepted_at from agreements where shop = ?").get(SHOP) as { version: number; accepted_at: string };
+    expect(row).toEqual({ version: 1, accepted_at: "2026-11-16T17:00:00.000Z" });
+    // Later saves don't ask again.
+    expect((await api("PUT", "/api/settings", withoutTerms)).statusCode).toBe(200);
+    expect((await openApp()).terms).toMatchObject({ accepted: true, version: 1 });
   });
 
   it("refuses a seller tax ID with a typo", async () => {
@@ -235,6 +253,111 @@ describe("from Shopify notification to invoice", () => {
     await worker.drain();
     const o = await openApp();
     expect(o.documents.map((d: { number: string }) => d.number).sort()).toEqual(["F2026-000001", "R2026-000001"]);
+  });
+});
+
+/** Reads a ZIP's entries and checks each one's checksum. */
+function readZip(zip: Buffer): Map<string, Buffer> {
+  const end = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  const count = zip.readUInt16LE(end + 10);
+  let at = zip.readUInt32LE(end + 16);
+  const files = new Map<string, Buffer>();
+  for (let i = 0; i < count; i++) {
+    expect(zip.readUInt32LE(at)).toBe(0x02014b50);
+    const crc = zip.readUInt32LE(at + 16), size = zip.readUInt32LE(at + 24), nameLen = zip.readUInt16LE(at + 28), local = zip.readUInt32LE(at + 42);
+    const name = zip.subarray(at + 46, at + 46 + nameLen).toString("utf8");
+    const dataAt = local + 30 + zip.readUInt16LE(local + 26) + zip.readUInt16LE(local + 28);
+    const data = zip.subarray(dataAt, dataAt + size);
+    expect(crc32(data), name).toBe(crc);
+    files.set(name, data);
+    at += 46 + nameLen;
+  }
+  return files;
+}
+
+describe("downloading everything", () => {
+  it("gives a ZIP with every invoice as a PDF, a spreadsheet and the Verifactu records", async () => {
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    for (const name of ["#1003", "#1004"]) await webhook(TOPICS.orderPaid, { id: orderId(name) });
+    shopify.refundsVisible.set("#1004", 1);
+    await webhook(TOPICS.refundCreated, { id: refundId("#1004", 0), order_id: orderId("#1004") });
+    await worker.drain();
+
+    const res = await api("GET", "/api/export");
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("application/zip");
+    expect(res.headers["content-disposition"]).toContain("facturas-einvoice-test-es-2026-11-16.zip");
+    const files = readZip(res.rawPayload);
+    expect([...files.keys()].sort()).toEqual(["LEEME.txt", "facturas.csv", "pdf/F2026-000001.pdf", "pdf/F2026-000002.pdf", "pdf/R2026-000001.pdf", "verifactu.json"]);
+    for (const [name, data] of files) if (name.endsWith(".pdf")) expect(data.subarray(0, 5).toString(), name).toBe("%PDF-");
+
+    const csv = files.get("facturas.csv")!.toString("utf8");
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    const lines = csv.slice(1).trim().split("\r\n");
+    expect(lines[0]).toBe("Número;Tipo;Fecha;Fecha de operación;Pedido;Cliente;NIF del cliente;Base;IVA;Total;Moneda;Rectifica");
+    expect(lines).toHaveLength(4);
+    expect(lines.find((l) => l.startsWith("F2026-000001"))).toBe("F2026-000001;F1;2026-11-16;;#1003;Cliente Prueba;89890001K;65,91;13,84;79,75;EUR;");
+    expect(lines.find((l) => l.startsWith("R2026-000001"))).toContain(";-38,21;EUR;F2026-000002");
+
+    const ledger = JSON.parse(files.get("verifactu.json")!.toString("utf8"));
+    expect(await verifyChain(ledger)).toEqual({ ok: true });
+  });
+});
+
+describe("what the app keeps", () => {
+  it("encrypts waiting notifications and empties them once handled", async () => {
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    shopify.down = true;
+    await webhook(TOPICS.orderPaid, { id: orderId("#1003"), email: "cliente@example.com" });
+    await worker.drain(); // the first attempt fails while Shopify is down
+    const waiting = db.prepare("select payload from inbox where topic = ?").get(TOPICS.orderPaid) as { payload: string };
+    expect(waiting.payload.startsWith("enc1:")).toBe(true);
+    expect(waiting.payload).not.toContain("cliente@example.com");
+    shopify.down = false;
+    now += 60_000;
+    await worker.drain();
+    const done = db.prepare("select status, payload from inbox where topic = ?").get(TOPICS.orderPaid) as { status: string; payload: string };
+    expect(done).toEqual({ status: "done", payload: "" });
+  });
+
+  it("forgets handled notifications after 30 days", async () => {
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    await webhook(TOPICS.orderPaid, { id: orderId("#1003") });
+    await worker.drain();
+    now += 29 * 24 * 3600_000;
+    expect(worker.purge()).toBe(0);
+    now += 2 * 24 * 3600_000;
+    expect(worker.purge()).toBeGreaterThan(0);
+    const n = db.prepare("select count(*) as n from inbox where topic = ?").get(TOPICS.orderPaid) as { n: number };
+    expect(n.n).toBe(0);
+    expect((await openApp()).issued).toBe(1); // the invoice itself stays
+  });
+
+  it("deletes everything about a shop when Shopify asks, and nothing of other shops", async () => {
+    await openApp();
+    await api("PUT", "/api/settings", settings);
+    await webhook(TOPICS.orderPaid, { id: orderId("#1003") });
+    await worker.drain();
+    db.prepare("insert into settings (shop, json, updated_at) values ('other.myshopify.com', '{}', 'x')").run();
+
+    await webhook("shop/redact", { shop_domain: SHOP });
+    await worker.drain();
+    for (const table of ["documents", "ledger", "series", "held", "skipped", "waiting_refunds", "settings", "agreements", "shops"]) {
+      const n = db.prepare(`select count(*) as n from ${table} where shop = ?`).get(SHOP) as { n: number };
+      expect(n.n, table).toBe(0);
+    }
+    const other = db.prepare("select count(*) as n from settings where shop = 'other.myshopify.com'").get() as { n: number };
+    expect(other.n).toBe(1);
+  });
+
+  it("logs customer privacy requests with the orders only, not the customer's details", async () => {
+    await webhook("customers/data_request", { shop_domain: SHOP, customer: { id: 1, email: "cliente@example.com", phone: "+34600000000" }, orders_requested: [7, 8] });
+    await worker.drain();
+    const row = db.prepare("select payload from compliance_requests").get() as { payload: string };
+    expect(JSON.parse(row.payload)).toEqual({ orders: [7, 8] });
   });
 });
 

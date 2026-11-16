@@ -4,7 +4,8 @@ import { verifyChain } from "../src/es/verify.js";
 import { validateTaxId } from "../src/es/nif.js";
 import { renderInvoicePdf, type Lang } from "../src/pdf.js";
 import type { ShopSettings } from "../src/shopify/to-invoice.js";
-import { loadSettings, saveSettings } from "./db.js";
+import { acceptTerms, LEGAL_URL, loadSettings, saveSettings, termsAccepted, TERMS_VERSION } from "./db.js";
+import { exportShop } from "./export.js";
 import { ShopifyClient, ShopifyUnavailable, Unauthorized, verifyIdToken, verifyWebhook } from "./shopify.js";
 import { renderAppPage } from "./ui.js";
 import { COMPLIANCE_TOPICS, TOPICS, Worker } from "./worker.js";
@@ -102,6 +103,7 @@ export function buildApp(o: AppOptions): FastifyInstance {
       const waiting = o.db.prepare("select count(*) as n from inbox where shop = ? and status = 'pending'").get(shop) as { n: number };
       return {
         settings: loadSettings(o.db, shop),
+        terms: { accepted: termsAccepted(o.db, shop), version: TERMS_VERSION, url: LEGAL_URL },
         documents: docs
           .slice(-200)
           .reverse()
@@ -136,6 +138,8 @@ export function buildApp(o: AppOptions): FastifyInstance {
       if (!text("name")) errors.name = "required";
       const id = validateTaxId(text("taxId"));
       if (!id.valid) errors.taxId = id.reason;
+      const accepted = termsAccepted(o.db, shop);
+      if (!accepted && b.acceptTerms !== true) errors.acceptTerms = "required";
       if (Object.keys(errors).length) return reply.code(422).send({ errors });
 
       const address = Object.fromEntries(
@@ -147,6 +151,7 @@ export function buildApp(o: AppOptions): FastifyInstance {
         ...(text("exemptionText") ? { exemptionText: text("exemptionText") } : {}),
       };
       saveSettings(o.db, shop, settings);
+      if (!accepted) acceptTerms(o.db, shop, new Date(now()));
       // Invoices held for missing details can go out now.
       o.worker.enqueue(`retry:${shop}:${now()}`, shop, TOPICS.retryHeld, "{}");
       o.worker.retryNow(shop);
@@ -160,6 +165,16 @@ export function buildApp(o: AppOptions): FastifyInstance {
       o.worker.retryNow(req.shop!);
       await o.worker.drain();
       return { ok: true };
+    });
+
+    // A copy of everything, for the shop to keep: the app doesn't promise to.
+    api.get("/api/export", async (req, reply) => {
+      const zip = await exportShop(o.worker.service(req.shop!).store, new Date(now()));
+      const day = new Date(now()).toISOString().slice(0, 10);
+      return reply
+        .type("application/zip")
+        .header("content-disposition", `attachment; filename="facturas-${req.shop!.replace(".myshopify.com", "")}-${day}.zip"`)
+        .send(zip);
     });
 
     api.get("/api/documents/:key/pdf", async (req, reply) => {

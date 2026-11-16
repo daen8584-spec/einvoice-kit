@@ -44,11 +44,11 @@ A simulation can only be as right as its idea of how Shopify behaves, so the cod
 
 Every invoice matched Shopify's total and VAT to the cent, and the €3,799.80 order was held. The refunds found something the simulation couldn't: when a refund lands on half a cent, Shopify rounds the first refund down, and my own split rounded it up, so one credit note came out a cent higher than what the customer got back. Credit notes now use the exact amount and VAT Shopify reports for each refunded item, and the test checks every one against Shopify's figures.
 
-To make sure the simulation isn't just passing, [`scripts/mutations.py`](scripts/mutations.py) breaks the app on purpose in thirteen different ways (wrong rounding, UTC dates, wrong hash order, duplicate handling removed...) and checks the simulation or the real-store test catches each one. They catch all thirteen. CI runs both on every change.
+To make sure the simulation isn't just passing, [`scripts/mutations.py`](scripts/mutations.py) breaks the app on purpose in fourteen different ways (wrong rounding, UTC dates, wrong hash order, duplicate handling removed...) and checks the simulation or the real-store test catches each one. They catch all fourteen. CI runs both on every change.
 
 ```bash
 npm run simulate -- 100000      # 100,000 orders, about 3 minutes (add --sqlite to use the database)
-npm run mutations               # the thirteen deliberate bugs
+npm run mutations               # the fourteen deliberate bugs
 ```
 
 No amount of testing makes software perfect. What this gives is a lot of evidence, a clear list of what's checked, and a design that stops rather than issues anything it isn't sure about.
@@ -69,7 +69,7 @@ Requires Node 20 or later.
 
 ```bash
 npm install
-npm test          # 89 tests, including the store simulation, real Shopify orders and the app end to end
+npm test          # 99 tests, including the store simulation, real Shopify orders and the app end to end
 npm run dev       # the checker at http://localhost:5173
 ```
 
@@ -84,6 +84,14 @@ To try it on an Android phone, there's a [Termux script](scripts/try-on-termux.s
 - **Each invoice is one database transaction.** Its number, its Verifactu record and its contents are saved together or not at all, and the store refuses a number out of order or a broken chain link.
 - **Authentication without redirects.** The admin page sends App Bridge ID tokens; the server checks them and swaps them for expiring offline tokens, which it keeps encrypted and refreshes before they lapse.
 - **The admin page** shows issued invoices with their PDFs, anything on hold and why, and the shop's invoicing details. Orders that arrive before those details are entered are held and go out as soon as they're saved.
+
+### Privacy
+
+- **Customer data is encrypted at rest** (AES-256-GCM): invoices, held drafts, waiting refunds and saved notifications. The Verifactu chain holds no customer data, so it stays readable and checkable without the key. Data written by older versions is encrypted on the next start.
+- **Only what invoices need**: no customer emails or phone numbers, no tracking. Notifications are emptied once handled and deleted after 30 days.
+- **Deleted on uninstall**: Shopify's `shop/redact`, sent 48 hours after an uninstall, deletes everything about the shop.
+- **The shop keeps its own copies**: the app doesn't promise long-term storage, so "Download everything" gives a ZIP with every invoice as a PDF, a CSV for Spanish Excel and the Verifactu records.
+- **Draft legal texts** in Spanish and English, published with the checker: [privacy policy](https://daen8584-spec.github.io/einvoice-kit/legal/privacidad.html) and [terms with the data processing agreement](https://daen8584-spec.github.io/einvoice-kit/legal/terminos.html). Shops accept them in the app before it starts invoicing for them.
 
 [`test/server.test.ts`](test/server.test.ts) runs the whole app against a stand-in for Shopify that serves the real test-store orders: forged and repeated webhooks, bad ID tokens, token refresh, Shopify being down, uninstalling, and every invoice and credit note checked against Shopify's figures.
 
@@ -110,8 +118,8 @@ Still to do before the App Store:
 
 - Hosting for real stores (testing runs from a phone, see above)
 - Sending records to the AEAT. Until then the PDF has no Verifactu QR code, since the QR tells customers the invoice can be checked with the tax office
-- Approval from Shopify to read customer names and addresses (protected customer data)
-- Deciding, with legal advice, how long to keep invoices after a shop uninstalls: Spanish law requires keeping them for years, while Shopify asks apps to delete shop data
+- Filling in the contact details in the legal texts, and a professional review of them
+- Approval from Shopify to read customer names and addresses (protected customer data) when the app is submitted
 - Moving the admin page to Polaris web components
 - Testing an order with shipping on a real store (the test store won't ship to Spain yet)
 
