@@ -1,9 +1,452 @@
 {
-  "source": "Read from the einvoice-test-es development store through the Shopify Admin GraphQL API (2026-10) on 2026-11-16. Prices include 21% Spanish VAT, calculated by Shopify.",
-  "orders": [
-    {"id":"gid://shopify/Order/19029732327648","legacyResourceId":"19029732327648","name":"#1001","createdAt":"2026-11-16T15:51:51Z","processedAt":"2026-11-16T15:51:50Z","currencyCode":"EUR","taxesIncluded":true,"totalPriceSet":{"shopMoney":{"amount":"54.8"}},"totalTaxSet":{"shopMoney":{"amount":"9.51"}},"customAttributes":[],"billingAddress":{"name":"Cliente Prueba","company":null,"address1":"Calle Mayor 1","city":"Madrid","zip":"28013","countryCodeV2":"ES"},"lineItems":{"nodes":[{"id":"gid://shopify/LineItem/50994246779104","title":"Selling Plans Ski Wax","variantTitle":"Sample Selling Plans Ski Wax","quantity":3,"originalUnitPriceSet":{"shopMoney":{"amount":"9.95"}},"discountAllocations":[],"taxLines":[{"title":"ES IVA","rate":0.21,"priceSet":{"shopMoney":{"amount":"5.18"}}}]},{"id":"gid://shopify/LineItem/50994246811872","title":"Selling Plans Ski Wax","variantTitle":"Selling Plans Ski Wax","quantity":1,"originalUnitPriceSet":{"shopMoney":{"amount":"24.95"}},"discountAllocations":[],"taxLines":[{"title":"ES IVA","rate":0.21,"priceSet":{"shopMoney":{"amount":"4.33"}}}]}]},"shippingLines":{"nodes":[]}},
-    {"id":"gid://shopify/Order/19029732425952","legacyResourceId":"19029732425952","name":"#1002","createdAt":"2026-11-16T15:51:52Z","processedAt":"2026-11-16T15:51:51Z","currencyCode":"EUR","taxesIncluded":true,"totalPriceSet":{"shopMoney":{"amount":"3799.8"}},"totalTaxSet":{"shopMoney":{"amount":"659.47"}},"customAttributes":[],"billingAddress":{"name":"Cliente Prueba","company":null,"address1":"Calle Mayor 1","city":"Madrid","zip":"28013","countryCodeV2":"ES"},"lineItems":{"nodes":[{"id":"gid://shopify/LineItem/50994246975712","title":"The Inventory Not Tracked Snowboard","variantTitle":null,"quantity":4,"originalUnitPriceSet":{"shopMoney":{"amount":"949.95"}},"discountAllocations":[],"taxLines":[{"title":"ES IVA","rate":0.21,"priceSet":{"shopMoney":{"amount":"659.47"}}}]}]},"shippingLines":{"nodes":[]}},
-    {"id":"gid://shopify/Order/19029733998816","legacyResourceId":"19029733998816","name":"#1003","createdAt":"2026-11-16T15:52:55Z","processedAt":"2026-11-16T15:52:55Z","currencyCode":"EUR","taxesIncluded":true,"totalPriceSet":{"shopMoney":{"amount":"79.75"}},"totalTaxSet":{"shopMoney":{"amount":"13.84"}},"customAttributes":[{"key":"NIF","value":"89890001K"}],"billingAddress":{"name":"Cliente Prueba","company":null,"address1":"Calle Mayor 1","city":"Madrid","zip":"28013","countryCodeV2":"ES"},"lineItems":{"nodes":[{"id":"gid://shopify/LineItem/50994250580192","title":"Selling Plans Ski Wax","variantTitle":"Selling Plans Ski Wax","quantity":2,"originalUnitPriceSet":{"shopMoney":{"amount":"24.95"}},"discountAllocations":[],"taxLines":[{"title":"ES IVA","rate":0.21,"priceSet":{"shopMoney":{"amount":"8.66"}}}]},{"id":"gid://shopify/LineItem/50994250612960","title":"Selling Plans Ski Wax","variantTitle":"Sample Selling Plans Ski Wax","quantity":3,"originalUnitPriceSet":{"shopMoney":{"amount":"9.95"}},"discountAllocations":[],"taxLines":[{"title":"ES IVA","rate":0.21,"priceSet":{"shopMoney":{"amount":"5.18"}}}]}]},"shippingLines":{"nodes":[]}},
-    {"id":"gid://shopify/Order/19029734031584","legacyResourceId":"19029734031584","name":"#1004","createdAt":"2026-11-16T15:52:56Z","processedAt":"2026-11-16T15:52:56Z","currencyCode":"EUR","taxesIncluded":true,"totalPriceSet":{"shopMoney":{"amount":"706.39"}},"totalTaxSet":{"shopMoney":{"amount":"122.59"}},"customAttributes":[],"billingAddress":{"name":"Cliente Prueba","company":null,"address1":"Calle Mayor 1","city":"Madrid","zip":"28013","countryCodeV2":"ES"},"lineItems":{"nodes":[{"id":"gid://shopify/LineItem/50994250678496","title":"The Complete Snowboard","variantTitle":"Ice","quantity":1,"originalUnitPriceSet":{"shopMoney":{"amount":"699.95"}},"discountAllocations":[{"allocatedAmountSet":{"shopMoney":{"amount":"69.99"}}}],"taxLines":[{"title":"ES IVA","rate":0.21,"priceSet":{"shopMoney":{"amount":"109.33"}}}]},{"id":"gid://shopify/LineItem/50994250711264","title":"Selling Plans Ski Wax","variantTitle":"Special Selling Plans Ski Wax","quantity":2,"originalUnitPriceSet":{"shopMoney":{"amount":"49.95"}},"discountAllocations":[{"allocatedAmountSet":{"shopMoney":{"amount":"14.98"}}},{"allocatedAmountSet":{"shopMoney":{"amount":"8.49"}}}],"taxLines":[{"title":"ES IVA","rate":0.21,"priceSet":{"shopMoney":{"amount":"13.26"}}}]}]},"shippingLines":{"nodes":[]}}
-  ]
+ "source": "Read from the einvoice-test-es development store through the Shopify Admin GraphQL API (2026-10) on 2026-11-16. Prices include 21% Spanish VAT, calculated by Shopify. Refunds were made in the Shopify admin the same day.",
+ "orders": [
+  {
+   "id": "gid://shopify/Order/19029732327648",
+   "legacyResourceId": "19029732327648",
+   "name": "#1001",
+   "createdAt": "2026-11-16T15:51:51Z",
+   "processedAt": "2026-11-16T15:51:50Z",
+   "currencyCode": "EUR",
+   "taxesIncluded": true,
+   "totalPriceSet": {
+    "shopMoney": {
+     "amount": "54.8"
+    }
+   },
+   "totalTaxSet": {
+    "shopMoney": {
+     "amount": "9.51"
+    }
+   },
+   "customAttributes": [],
+   "billingAddress": {
+    "name": "Cliente Prueba",
+    "company": null,
+    "address1": "Calle Mayor 1",
+    "city": "Madrid",
+    "zip": "28013",
+    "countryCodeV2": "ES"
+   },
+   "lineItems": {
+    "nodes": [
+     {
+      "id": "gid://shopify/LineItem/50994246779104",
+      "title": "Selling Plans Ski Wax",
+      "variantTitle": "Sample Selling Plans Ski Wax",
+      "quantity": 3,
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "9.95"
+       }
+      },
+      "discountAllocations": [],
+      "taxLines": [
+       {
+        "title": "ES IVA",
+        "rate": 0.21,
+        "priceSet": {
+         "shopMoney": {
+          "amount": "5.18"
+         }
+        }
+       }
+      ]
+     },
+     {
+      "id": "gid://shopify/LineItem/50994246811872",
+      "title": "Selling Plans Ski Wax",
+      "variantTitle": "Selling Plans Ski Wax",
+      "quantity": 1,
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "24.95"
+       }
+      },
+      "discountAllocations": [],
+      "taxLines": [
+       {
+        "title": "ES IVA",
+        "rate": 0.21,
+        "priceSet": {
+         "shopMoney": {
+          "amount": "4.33"
+         }
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "shippingLines": {
+    "nodes": []
+   },
+   "refunds": [
+    {
+     "legacyResourceId": "1118843109600",
+     "createdAt": "2026-11-16T15:58:25Z",
+     "note": "",
+     "refundLineItems": {
+      "nodes": [
+       {
+        "quantity": 1,
+        "lineItem": {
+         "id": "gid://shopify/LineItem/50994246779104"
+        },
+        "subtotalSet": {
+         "shopMoney": {
+          "amount": "9.95"
+         }
+        },
+        "totalTaxSet": {
+         "shopMoney": {
+          "amount": "1.72"
+         }
+        }
+       }
+      ]
+     },
+     "orderAdjustments": {
+      "nodes": []
+     }
+    },
+    {
+     "legacyResourceId": "1118843568352",
+     "createdAt": "2026-11-16T16:00:40Z",
+     "note": "",
+     "refundLineItems": {
+      "nodes": [
+       {
+        "quantity": 1,
+        "lineItem": {
+         "id": "gid://shopify/LineItem/50994246779104"
+        },
+        "subtotalSet": {
+         "shopMoney": {
+          "amount": "9.95"
+         }
+        },
+        "totalTaxSet": {
+         "shopMoney": {
+          "amount": "1.73"
+         }
+        }
+       }
+      ]
+     },
+     "orderAdjustments": {
+      "nodes": []
+     }
+    },
+    {
+     "legacyResourceId": "1118843633888",
+     "createdAt": "2026-11-16T16:01:03Z",
+     "note": "",
+     "refundLineItems": {
+      "nodes": [
+       {
+        "quantity": 1,
+        "lineItem": {
+         "id": "gid://shopify/LineItem/50994246779104"
+        },
+        "subtotalSet": {
+         "shopMoney": {
+          "amount": "9.95"
+         }
+        },
+        "totalTaxSet": {
+         "shopMoney": {
+          "amount": "1.73"
+         }
+        }
+       }
+      ]
+     },
+     "orderAdjustments": {
+      "nodes": []
+     }
+    }
+   ]
+  },
+  {
+   "id": "gid://shopify/Order/19029732425952",
+   "legacyResourceId": "19029732425952",
+   "name": "#1002",
+   "createdAt": "2026-11-16T15:51:52Z",
+   "processedAt": "2026-11-16T15:51:51Z",
+   "currencyCode": "EUR",
+   "taxesIncluded": true,
+   "totalPriceSet": {
+    "shopMoney": {
+     "amount": "3799.8"
+    }
+   },
+   "totalTaxSet": {
+    "shopMoney": {
+     "amount": "659.47"
+    }
+   },
+   "customAttributes": [],
+   "billingAddress": {
+    "name": "Cliente Prueba",
+    "company": null,
+    "address1": "Calle Mayor 1",
+    "city": "Madrid",
+    "zip": "28013",
+    "countryCodeV2": "ES"
+   },
+   "lineItems": {
+    "nodes": [
+     {
+      "id": "gid://shopify/LineItem/50994246975712",
+      "title": "The Inventory Not Tracked Snowboard",
+      "variantTitle": null,
+      "quantity": 4,
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "949.95"
+       }
+      },
+      "discountAllocations": [],
+      "taxLines": [
+       {
+        "title": "ES IVA",
+        "rate": 0.21,
+        "priceSet": {
+         "shopMoney": {
+          "amount": "659.47"
+         }
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "shippingLines": {
+    "nodes": []
+   },
+   "refunds": []
+  },
+  {
+   "id": "gid://shopify/Order/19029733998816",
+   "legacyResourceId": "19029733998816",
+   "name": "#1003",
+   "createdAt": "2026-11-16T15:52:55Z",
+   "processedAt": "2026-11-16T15:52:55Z",
+   "currencyCode": "EUR",
+   "taxesIncluded": true,
+   "totalPriceSet": {
+    "shopMoney": {
+     "amount": "79.75"
+    }
+   },
+   "totalTaxSet": {
+    "shopMoney": {
+     "amount": "13.84"
+    }
+   },
+   "customAttributes": [
+    {
+     "key": "NIF",
+     "value": "89890001K"
+    }
+   ],
+   "billingAddress": {
+    "name": "Cliente Prueba",
+    "company": null,
+    "address1": "Calle Mayor 1",
+    "city": "Madrid",
+    "zip": "28013",
+    "countryCodeV2": "ES"
+   },
+   "lineItems": {
+    "nodes": [
+     {
+      "id": "gid://shopify/LineItem/50994250580192",
+      "title": "Selling Plans Ski Wax",
+      "variantTitle": "Selling Plans Ski Wax",
+      "quantity": 2,
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "24.95"
+       }
+      },
+      "discountAllocations": [],
+      "taxLines": [
+       {
+        "title": "ES IVA",
+        "rate": 0.21,
+        "priceSet": {
+         "shopMoney": {
+          "amount": "8.66"
+         }
+        }
+       }
+      ]
+     },
+     {
+      "id": "gid://shopify/LineItem/50994250612960",
+      "title": "Selling Plans Ski Wax",
+      "variantTitle": "Sample Selling Plans Ski Wax",
+      "quantity": 3,
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "9.95"
+       }
+      },
+      "discountAllocations": [],
+      "taxLines": [
+       {
+        "title": "ES IVA",
+        "rate": 0.21,
+        "priceSet": {
+         "shopMoney": {
+          "amount": "5.18"
+         }
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "shippingLines": {
+    "nodes": []
+   },
+   "refunds": []
+  },
+  {
+   "id": "gid://shopify/Order/19029734031584",
+   "legacyResourceId": "19029734031584",
+   "name": "#1004",
+   "createdAt": "2026-11-16T15:52:56Z",
+   "processedAt": "2026-11-16T15:52:56Z",
+   "currencyCode": "EUR",
+   "taxesIncluded": true,
+   "totalPriceSet": {
+    "shopMoney": {
+     "amount": "706.39"
+    }
+   },
+   "totalTaxSet": {
+    "shopMoney": {
+     "amount": "122.59"
+    }
+   },
+   "customAttributes": [],
+   "billingAddress": {
+    "name": "Cliente Prueba",
+    "company": null,
+    "address1": "Calle Mayor 1",
+    "city": "Madrid",
+    "zip": "28013",
+    "countryCodeV2": "ES"
+   },
+   "lineItems": {
+    "nodes": [
+     {
+      "id": "gid://shopify/LineItem/50994250678496",
+      "title": "The Complete Snowboard",
+      "variantTitle": "Ice",
+      "quantity": 1,
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "699.95"
+       }
+      },
+      "discountAllocations": [
+       {
+        "allocatedAmountSet": {
+         "shopMoney": {
+          "amount": "69.99"
+         }
+        }
+       }
+      ],
+      "taxLines": [
+       {
+        "title": "ES IVA",
+        "rate": 0.21,
+        "priceSet": {
+         "shopMoney": {
+          "amount": "109.33"
+         }
+        }
+       }
+      ]
+     },
+     {
+      "id": "gid://shopify/LineItem/50994250711264",
+      "title": "Selling Plans Ski Wax",
+      "variantTitle": "Special Selling Plans Ski Wax",
+      "quantity": 2,
+      "originalUnitPriceSet": {
+       "shopMoney": {
+        "amount": "49.95"
+       }
+      },
+      "discountAllocations": [
+       {
+        "allocatedAmountSet": {
+         "shopMoney": {
+          "amount": "14.98"
+         }
+        }
+       },
+       {
+        "allocatedAmountSet": {
+         "shopMoney": {
+          "amount": "8.49"
+         }
+        }
+       }
+      ],
+      "taxLines": [
+       {
+        "title": "ES IVA",
+        "rate": 0.21,
+        "priceSet": {
+         "shopMoney": {
+          "amount": "13.26"
+         }
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "shippingLines": {
+    "nodes": []
+   },
+   "refunds": [
+    {
+     "legacyResourceId": "1118843732192",
+     "createdAt": "2026-11-16T16:01:32Z",
+     "note": "",
+     "refundLineItems": {
+      "nodes": [
+       {
+        "quantity": 1,
+        "lineItem": {
+         "id": "gid://shopify/LineItem/50994250711264"
+        },
+        "subtotalSet": {
+         "shopMoney": {
+          "amount": "38.21"
+         }
+        },
+        "totalTaxSet": {
+         "shopMoney": {
+          "amount": "6.63"
+         }
+        }
+       }
+      ]
+     },
+     "orderAdjustments": {
+      "nodes": []
+     }
+    }
+   ]
+  }
+ ]
 }

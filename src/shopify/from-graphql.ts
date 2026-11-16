@@ -22,6 +22,13 @@ export interface GraphQLOrder {
   customAttributes?: { key: string; value: string | null }[];
   billingAddress?: { name?: string | null; company?: string | null; address1?: string | null; city?: string | null; zip?: string | null; countryCodeV2?: string | null } | null;
   lineItems: { nodes: { id: string; title: string; variantTitle?: string | null; quantity: number; originalUnitPriceSet: Money; discountAllocations: Allocation[]; taxLines: TaxLine[] }[] };
+  refunds?: {
+    legacyResourceId: string;
+    createdAt: string;
+    note?: string | null;
+    refundLineItems: { nodes: { quantity: number; lineItem: { id: string }; subtotalSet: Money; totalTaxSet: Money }[] };
+    orderAdjustments?: { nodes: { reason?: string | null; amountSet: Money; taxAmountSet: Money }[] };
+  }[];
   shippingLines?: { nodes: { title: string; originalPriceSet: Money; discountAllocations: Allocation[]; taxLines: TaxLine[] }[] };
 }
 
@@ -56,6 +63,24 @@ export function fromGraphQL(o: GraphQLOrder): ShopifyOrder {
     })),
     billing_address: b ? { name: b.name ?? null, company: b.company ?? null, address1: b.address1 ?? null, city: b.city ?? null, zip: b.zip ?? null, country_code: b.countryCodeV2 ?? null } : null,
     note_attributes: (o.customAttributes ?? []).map((a) => ({ name: a.key, value: a.value ?? "" })),
-    refunds: [],
+    refunds: (o.refunds ?? [])
+      .slice()
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((r) => ({
+        id: Number(r.legacyResourceId),
+        created_at: r.createdAt,
+        note: r.note ?? null,
+        refund_line_items: r.refundLineItems.nodes.map((x) => ({
+          line_item_id: numericId(x.lineItem.id),
+          quantity: x.quantity,
+          subtotal: x.subtotalSet.shopMoney.amount,
+          total_tax: x.totalTaxSet.shopMoney.amount,
+        })),
+        order_adjustments: (r.orderAdjustments?.nodes ?? []).map((a) => ({
+          kind: a.reason ?? "adjustment",
+          amount: a.amountSet.shopMoney.amount,
+          tax_amount: a.taxAmountSet.shopMoney.amount,
+        })),
+      })),
   };
 }

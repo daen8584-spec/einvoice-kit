@@ -29,3 +29,37 @@ describe("real orders from the Shopify test store", () => {
     expect(await verifyChain(app.ledger)).toEqual({ ok: true });
   });
 });
+
+describe("real refunds from the Shopify test store", () => {
+  const refunded = orders.filter((o) => o.order.refunds!.length > 0);
+
+  it.each(refunded.map((o) => [o.raw.name, o] as const))("%s: every credit note matches what Shopify refunded", async (_name, { raw, order }) => {
+    const app = new InvoiceService(shop, undefined, undefined, () => new Date("2026-11-16T17:00:00Z"));
+    await app.onOrder(order);
+    for (const [i, refund] of order.refunds!.entries()) {
+      const r = raw.refunds![i]!;
+      const out = await app.onRefund({ ...order, refunds: order.refunds!.slice(0, i + 1) }, refund);
+      expect("held" in out || "skipped" in out).toBe(false);
+      if ("held" in out || "skipped" in out) return;
+      const shopifyAmount = r.refundLineItems.nodes.reduce((s, x) => s + toCents(x.subtotalSet.shopMoney.amount), 0);
+      const shopifyTax = r.refundLineItems.nodes.reduce((s, x) => s + toCents(x.totalTaxSet.shopMoney.amount), 0);
+      expect(out.totals.total).toBe(-shopifyAmount);
+      expect(out.totals.tax).toBe(-shopifyTax);
+      expect(out.issues.filter((x) => x.level === "error")).toEqual([]);
+    }
+    expect(await verifyChain(app.ledger)).toEqual({ ok: true });
+  });
+
+  it("#1001: three refunds of one unit add up to exactly the line", async () => {
+    const { order } = orders.find((o) => o.raw.name === "#1001")!;
+    const app = new InvoiceService(shop, undefined, undefined, () => new Date("2026-11-16T17:00:00Z"));
+    const inv = await app.onOrder(order);
+    let total = 0, tax = 0;
+    for (const [i, refund] of order.refunds!.entries()) {
+      const out = await app.onRefund({ ...order, refunds: order.refunds!.slice(0, i + 1) }, refund);
+      if ("totals" in out) { total += out.totals.total; tax += out.totals.tax; }
+    }
+    expect([total, tax]).toEqual([-2985, -518]); // 3 × 9.95, and the line's 5.18 VAT
+    expect("held" in inv).toBe(false);
+  });
+});

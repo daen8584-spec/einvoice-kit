@@ -17,7 +17,7 @@ jobs:
       - run: npm test
       - run: npm run build
   safety:
-    # Breaks the app on purpose in ten ways and checks the store simulation catches every one.
+    # Breaks the app on purpose in eleven ways and checks the store simulation catches every one.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
