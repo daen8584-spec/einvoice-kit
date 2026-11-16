@@ -34,8 +34,16 @@ else
   cd "$DIR"
 fi
 
+if [ ! -f shopify.web.toml ]; then
+  echo "This copy of the app is too old to run from a phone. Merge the pull request that adds it, then run this again." >&2
+  exit 1
+fi
+
 npm ci --no-audit --no-fund > /dev/null
-command -v shopify > /dev/null || npm install -g --no-audit --no-fund @shopify/cli@5.0.0 > /dev/null
+# Shopify CLI only lists Mac, Linux and Windows. Termux reports "android", but
+# the CLI is plain JavaScript, so it's installed anyway.
+command -v shopify > /dev/null || npm install -g --force --no-audit --no-fund @shopify/cli@5.0.0 > /dev/null
+shopify version > /dev/null
 
 echo "== Opening the tunnel"
 rm -f "$LOG"
@@ -55,13 +63,23 @@ if [ -z "$URL" ]; then
 fi
 echo "   $URL"
 
-if grep -q REPLACE_WITH_CLIENT_ID shopify.app.toml; then
+# Shopify CLI keeps this shop's link to the app in its own file. The settings
+# themselves (permissions, webhooks) come from shopify.app.toml, copied in on
+# every start so changes there always take effect. Only the app ID is kept.
+CONFIG=shopify.app.einvoice-kit.toml
+if [ ! -f "$CONFIG" ]; then
   echo
   echo "== First time: connect the app to your Shopify account"
   echo "   Choose: create a new app, and name it einvoice-kit."
-  shopify app config link
+  shopify app config link --config einvoice-kit
 fi
+CLIENT_ID=$(grep -oE '^client_id = "[^"]+"' "$CONFIG" | head -1)
+if [ -z "$CLIENT_ID" ]; then
+  echo "Couldn't find the app's client ID in $CONFIG. Delete that file and run this again." >&2
+  exit 1
+fi
+sed "s/^client_id = .*/$CLIENT_ID/" shopify.app.toml > "$CONFIG"
 
 echo
 echo "== Starting. Press p to open the app in your store, Ctrl+C to stop."
-shopify app dev --tunnel-url "$URL:$PORT" --store "$STORE" --skip-dependencies-installation
+shopify app dev --config einvoice-kit --tunnel-url "$URL:$PORT" --store "$STORE" --skip-dependencies-installation

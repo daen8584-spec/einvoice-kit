@@ -8,6 +8,11 @@ embedded = true
 [build]
 automatically_update_urls_on_dev = true
 
+[auth]
+# The app logs in with token exchange, which needs no redirects, but Shopify CLI
+# requires the section. `shopify app dev` moves this address to the tunnel.
+redirect_urls = ["https://REPLACE_WITH_APP_HOST/auth/callback"]
+
 [access_scopes]
 # Orders, refunds and the customer's billing details are all the app reads.
 scopes = "read_orders"
