@@ -34,8 +34,16 @@ else
   cd "$DIR"
 fi
 
+if [ ! -f shopify.web.toml ]; then
+  echo "This copy of the app is too old to run from a phone. Merge the pull request that adds it, then run this again." >&2
+  exit 1
+fi
+
 npm ci --no-audit --no-fund > /dev/null
-command -v shopify > /dev/null || npm install -g --no-audit --no-fund @shopify/cli@5.0.0 > /dev/null
+# Shopify CLI only lists Mac, Linux and Windows. Termux reports "android", but
+# the CLI is plain JavaScript, so it's installed anyway.
+command -v shopify > /dev/null || npm install -g --force --no-audit --no-fund @shopify/cli@5.0.0 > /dev/null
+shopify version > /dev/null
 
 echo "== Opening the tunnel"
 rm -f "$LOG"
