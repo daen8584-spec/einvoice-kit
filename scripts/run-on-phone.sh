@@ -63,13 +63,23 @@ if [ -z "$URL" ]; then
 fi
 echo "   $URL"
 
-if grep -q REPLACE_WITH_CLIENT_ID shopify.app.toml; then
+# Shopify CLI keeps this shop's link to the app in its own file. The settings
+# themselves (permissions, webhooks) come from shopify.app.toml, copied in on
+# every start so changes there always take effect. Only the app ID is kept.
+CONFIG=shopify.app.einvoice-kit.toml
+if [ ! -f "$CONFIG" ]; then
   echo
   echo "== First time: connect the app to your Shopify account"
   echo "   Choose: create a new app, and name it einvoice-kit."
-  shopify app config link
+  shopify app config link --config einvoice-kit
 fi
+CLIENT_ID=$(grep -oE '^client_id = "[^"]+"' "$CONFIG" | head -1)
+if [ -z "$CLIENT_ID" ]; then
+  echo "Couldn't find the app's client ID in $CONFIG. Delete that file and run this again." >&2
+  exit 1
+fi
+sed "s/^client_id = .*/$CLIENT_ID/" shopify.app.toml > "$CONFIG"
 
 echo
 echo "== Starting. Press p to open the app in your store, Ctrl+C to stop."
-shopify app dev --tunnel-url "$URL:$PORT" --store "$STORE" --skip-dependencies-installation
+shopify app dev --config einvoice-kit --tunnel-url "$URL:$PORT" --store "$STORE" --skip-dependencies-installation
